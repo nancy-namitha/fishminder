@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * fishminder
  *
@@ -20,8 +22,6 @@
  * Author(s):
  *      Jonas Arndt <jonas.arndt@hpe.com>
  *	Hemantha Beecherla <hemantha.beecherla@hpe.com>
- *
- * CredentialMgr - Manages Redfish Credentials
  **/
 
 #ifndef RFEVENTREC_H

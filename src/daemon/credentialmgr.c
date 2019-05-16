@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * fishminder
  *
@@ -19,8 +21,6 @@
  *
  * Author(s):
  *	Jonas Arndt <jonas.arndt@hpe.com>
- *
- * CredentialMgr - Manages Redfish Credentials
  **/
 
 #include "rfeventrec.h"
