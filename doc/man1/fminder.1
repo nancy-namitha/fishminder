@@ -1,0 +1,49 @@
+.TH FMINDER 1 "23 January 2019" "version 1.0"
+.SH NAME
+fminder \- Client to manage subscriptions to Redfish equipment
+.SH SYNOPSIS
+.B fminder
+\fB\-a \fR<action>
+\fB\-h\fR <hostname>
+\fB\-u\fR <username>
+\fB\-p\fR <password>
+.SH DESCRIPTION
+.B fminder
+is a client that connects to the fishminderd process to manage subscriptions to infrastructure that hosts the \fBRedfish Event Service\fR.
+.SH OPTIONS
+-a|--action
+.RS 4
+Can currently be add|remove. These are the actions that can be performed on subscriptions
+.RE
+.PP
+-h|--hostname
+.RS 4
+The hostname of the server
+.RE
+.PP
+-u|--username
+.RS 4
+The username of a user that can subscribe to the Redfish Event Service
+.RE
+.PP
+-p|--password
+.RS 4
+The password of the user that can subscribe to the Redfish Event Service
+.SH FILES
+.PP
+/etc/fishminder/redfish_events.db
+.RS 4
+This is the SQLITE database file. Both this file and the directory it is in need to have read/write permissions by the user that will run this process
+.RE
+.PP
+/etc/fishminder/fishminderd.conf
+.RS 4
+This is the configuration file for fishminderd
+.RE
+.PP
+/var/run/fishminder/fishminderd.pid
+.RS 4
+This is the PID file for the process
+.SH SEE ALSO
+.PP
+\fBfishminderd\fR(8)

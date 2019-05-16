@@ -1,0 +1,49 @@
+.TH FISHMINDERD 8 "15 January 2019" "version 1.0"
+.SH NAME
+fishminderd \- Server to accept events from the  Redfish Event Service
+.SH SYNOPSIS
+.B fishminderd
+\fB\-h \fR<hostname>
+\fB\-p\fR <port>
+[\fB-v\fR]
+[\fB-n\fR]
+.SH DESCRIPTION
+.B fishminderd
+is a daemon that listens to a port for incoming events from a Redfish Event Service. In its initial release it uses a lightweight SQLITE database to store all incoming events. An event is only accepted if a subscription exists for the infrastructure that sends the event. One uses the \fB\fIfminder(1) \fRutility to manage the subscriptions.
+.SH OPTIONS
+-h|--hostname
+.RS 4
+This is the fully qualified host name or IP address of the interface the daemon should listen
+.RE
+.PP
+-p|--port
+.RS 4
+This is the port number the host name should listen to
+.RE
+.PP
+-v|--verbose
+.RS 4
+If this parameter is present it causes the daemon to display verbose messages. This is an optional parameter
+.RE
+.PP
+-n|--nondaemon
+.RS 4
+Forces the process to run as a foreground process and NOT as a daemon. The default is to run as a daemon. The option is an optional parameter
+.SH FILES
+.PP
+/etc/fishminder/redfish_events.db
+.RS 4
+This is the SQLITE database file. Both this file and the directory it is in need to have read/write permissions by the user that will run this process
+.RE
+.PP
+/etc/fishminder/fishminderd.conf
+.RS 4
+This is the configuration file for fishminderd
+.RE
+.PP
+/var/run/fishminder/fishminderd.pid
+.RS 4
+This is the PID file for the process
+.SH SEE ALSO
+.PP
+\fBfminder\fR(1)

@@ -1,0 +1,13 @@
+In order to use this DB the following operations have to be carried out
+
+$ sudo useradd -m -d /home/redfishrec -s /bin/bash redfishrec
+$ sudo mkdir -p /etc/redfish_event_listener
+$ sudo chown redfishrec:redfishrec /etc/redfish_event_listener
+$ sudo chmod 775 /etc/redfish_event_listener
+
+Now, make sure that the nagios user belongs to the redfishrec group, and then:
+
+$ sudo -u redfishrec sqlite3 /etc/redfish_event_listener/redfish_events.db < sqlite_schema.sql
+$ sudo -u redfishrec sqlite3 /etc/redfish_event_listener/redfish_events.db < populate.sql
+$ sudo chmod 775 /etc/redfish_event_listener/redfish_events.db
+

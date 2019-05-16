@@ -1,0 +1,1 @@
+Place these certificated in /etc/redfish_event_listener/ and make sure they are owned by redfishrec
