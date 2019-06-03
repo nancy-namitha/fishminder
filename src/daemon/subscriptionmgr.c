@@ -170,11 +170,10 @@ char *unsubscribe(char* input_host, const char* db_path){
 	if(!cred->subscription_url || !cred->x_auth_token ||
 			!strcmp(cred->subscription_url, "") ||
 			!strcmp(cred->x_auth_token, "")){
-		/* Subscription is not alive return true, here*/
-		returnstring = (char *) g_malloc0(36*(sizeof(char)));
-		strcpy(returnstring, "unsubscribe: No such subscriptions");
+		/* Subscription is not alive lets remove this record,
+		 * by return NULL here*/
 		g_free(cred);
-		return returnstring;
+		return NULL;
 	}
 	ulfius_init_request(&request);
 	ulfius_init_response(&response);
