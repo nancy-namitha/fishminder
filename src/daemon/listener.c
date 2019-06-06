@@ -292,7 +292,6 @@ json_t *get_event_registry(char *input_host,
 		if (!json_is_object(eventsobj)) {
 			CRIT( "error: Got back a non json object\n");
 			u_map_clean(&map_header);
-			json_decref(location);
 			json_decref(json_body);
 			free(mycreds_like);
 			ulfius_clean_request(request);
@@ -304,7 +303,6 @@ json_t *get_event_registry(char *input_host,
 			CRIT( "error: Got back a non json object: "
 				"eventsobj\n");
 			u_map_clean(&map_header);
-			json_decref(location);
 			json_decref(json_body);
 			free(mycreds_like);
 			ulfius_clean_request(request);
@@ -312,13 +310,11 @@ json_t *get_event_registry(char *input_host,
 			return NULL;
 		}
 		eventslink = strdup(json_string_value(eventsobj));
-		json_decref(eventsobj);
 		break; // We only need the first one (there should be no more)
 	}
 	DBG("Json registry link is:\n%s\n", eventslink); //REMOVE
 
 	// Decres the objects
-	json_decref(location);
 	json_decref(json_body);
 
 	// Some clenaup
@@ -795,57 +791,36 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	if (regitemmessage == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
 		return 1;
 	}
 	resolution = json_object_get(regitem, "Resolution");
 	if (resolution == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
-		json_decref(resolution);
 		return 1;
 	}
 	severity = json_object_get(regitem, "Severity");
 	if (severity == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
-		json_decref(resolution);
-		json_decref(severity);
 		return 1;
 	}
 	oem = json_object_get(regitem, "Oem");
 	if (oem == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
-		json_decref(resolution);
-		json_decref(severity);
-		json_decref(oem);
 		return 1;
 	}
 	oemhpe = json_object_get(oem, "Hpe");
 	if (oemhpe == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
-		json_decref(resolution);
-		json_decref(severity);
-		json_decref(oem);
-		json_decref(oemhpe);
 		return 1;
 	}
 	healthcategory = json_object_get(oemhpe, "HealthCategory");
 	if (healthcategory == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
-		json_decref(resolution);
-		json_decref(severity);
-		json_decref(oem);
-		json_decref(oemhpe);
-		json_decref(healthcategory);
 		return 1;
 	}
 	// Is this event an event that clear others?
@@ -856,13 +831,6 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		if (tmpclearingarray == NULL) {
 			free(messageidchar);
 			free(timechar);
-			json_decref(regitem);
-			json_decref(resolution);
-			json_decref(severity);
-			json_decref(oem);
-			json_decref(oemhpe);
-			json_decref(healthcategory);
-			json_decref(clearinglogic);
 			return 1;
 		}
 		clearmsgs[0] = tmpclearingarray;
@@ -871,14 +839,6 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	if (originofcondition == NULL) {
 		free(messageidchar);
 		free(timechar);
-		json_decref(regitem);
-		json_decref(resolution);
-		json_decref(severity);
-		json_decref(oem);
-		json_decref(oemhpe);
-		json_decref(healthcategory);
-		json_decref(clearinglogic);
-		json_decref(originofcondition);
 		return 1;
 	}
 	messageargs = json_object_get(eventobj, "MessageArgs");
@@ -927,22 +887,10 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	       json_string_value(originofcondition));
 	strcpy(event->category, json_string_value(healthcategory));
 	event->time = atoi(timeret);
-
 	// Cleanup
-	if(!severity)
-		json_decref(severity);
-	if(!oem)
-		json_decref(oem);
-	if(!oemhpe)
-		json_decref(oemhpe);
-	if(!healthcategory)
-		json_decref(healthcategory);
-	if(!clearinglogic)
-		json_decref(clearinglogic);
-	if(!originofcondition)
-		json_decref(originofcondition);
 	free(messageidchar); // Will this be dangerous?
 	free(timechar);
+	free(tmpchar);
 
 	return 0;
 }
@@ -1019,8 +967,6 @@ int callback_post (const struct _u_request *request,
 		eventsobj = json_array_get(events, i);
 		messageid = json_object_get(eventsobj, "MessageId");
 		if (messageid == NULL) {
-			json_decref(eventsobj);
-			json_decref(events);
 			json_decref(json_body);
 			return 1;
 		}
@@ -1031,9 +977,6 @@ int callback_post (const struct _u_request *request,
 		if (event_reg_body == NULL) {
 			CRIT( "The callback function failed to "
 				       "get the event_registry\n");
-			json_decref(messageid);
-			json_decref(eventsobj);
-			json_decref(events);
 			json_decref(json_body);
 			free(messageidchar);
 			ulfius_clean_request(&reg_request);
@@ -1045,9 +988,6 @@ int callback_post (const struct _u_request *request,
 			CRIT( "The callback function failed to "
 				       "get the event_registry\n");
 			json_decref(event_reg_body);
-			json_decref(messageid);
-			json_decref(eventsobj);
-			json_decref(events);
 			json_decref(json_body);
 			free(messageidchar);
 			ulfius_clean_request(&reg_request);
@@ -1082,11 +1022,7 @@ int callback_post (const struct _u_request *request,
 					json_array_get(*clrmsgs, j);
 				if (NULL == clearingmessage){
 					free(messageidchar);
-					json_decref(event_reg);
 					json_decref(event_reg_body);
-					json_decref(messageid);
-					json_decref(eventsobj);
-					json_decref(events);
 					json_decref(json_body);
 					ulfius_clean_request(&reg_request);
 					ulfius_clean_response(&reg_response);
@@ -1107,11 +1043,7 @@ int callback_post (const struct _u_request *request,
 
 	ulfius_set_string_body_response(response, 200, "Created");
 	free(messageidchar);
-	json_decref(event_reg);
 	json_decref(event_reg_body);
-	json_decref(messageid);
-	json_decref(events);
-	json_decref(eventsobj);
 	json_decref(json_body);
 	ulfius_clean_request(&reg_request);
 	ulfius_clean_response(&reg_response);

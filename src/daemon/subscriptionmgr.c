@@ -76,16 +76,12 @@ char* get_event_service_subscription_uri(struct Credentials *cred)
 
 		if(!eventService_odata){
 			CRIT("error: EventService url is null");
-			json_decref(json_odataId);
-			json_decref(json_eventService);
 			json_decref(json_body);
 			ulfius_clean_request(&request);
 			ulfius_clean_response(&response);
 			return NULL;
 		}
 		ASPRINTF(&eventService_url, "%s", eventService_odata);
-		json_decref(json_odataId);
-		json_decref(json_eventService);
 		json_decref(json_body);
 	}else{
 		ulfius_clean_request(&request);
@@ -129,16 +125,12 @@ char* get_event_service_subscription_uri(struct Credentials *cred)
 		char* url_to_subscribe = (char*)json_string_value(json_odataId);
 		if(!url_to_subscribe){
 			CRIT("error: Url to subscribe is NULL");
-			json_decref(json_odataId);
-			json_decref(json_subscriptions);
 			json_decref(json_body);
 			ulfius_clean_request(&request);
 			ulfius_clean_response(&response);
 			return NULL;
 		}
 		ASPRINTF(&url, "%s", url_to_subscribe);
-		json_decref(json_odataId);
-		json_decref(json_subscriptions);
 		json_decref(json_body);
 
 	}else {
@@ -270,7 +262,6 @@ gboolean is_this_my_subscription(struct Credentials* cred, char *sub_url,
 			INFO("Not our subscription");
 			myreturn = FALSE;
 		}
-		json_decref(json_dest);
 		json_decref(json_body);
 	}
 	u_map_clean(&map_header);
@@ -477,7 +468,6 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 						g_malloc0(40*(sizeof(char)));
 				strcpy(returnstring, "Internal error in "
 				       "subscribe function");
-				json_decref(members);
 				json_decref(json_body);
 				goto CLEAN;
 			}
@@ -486,20 +476,15 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 			for(int i=0; i< count; i++){
 				json_t *sub_obj = json_array_get(members, i);
 				if(!json_is_object(sub_obj)){
-					json_decref(sub_obj);
 					continue;
 				}
 				json_t *odata_id = json_object_get(sub_obj,
 								   "@odata.id");
 				if(!json_is_object(odata_id)){
-					json_decref(odata_id);
-					json_decref(sub_obj);
 					continue;
 				}
 				url_link = (char*)json_string_value(odata_id);
 				if(!url_link){
-					json_decref(odata_id);
-					json_decref(sub_obj);
 					continue;
 				}
 				ASPRINTF(&url_link, "https://%s%s", cred->host,
@@ -518,9 +503,6 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 						g_malloc0(40*(sizeof(char)));
 						strcpy(returnstring, "Internal "
 						"error in subscribe function");
-						json_decref(odata_id);
-						json_decref(sub_obj);
-						json_decref(members);
 						json_decref(json_body);
 						goto CLEAN;
 					}else{
@@ -546,18 +528,12 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 						commitevent2db(input, db_path);
 						g_free(input);
 						input = NULL;
-						json_decref(odata_id);
-						json_decref(sub_obj);
-						json_decref(members);
 						json_decref(json_body);
 						goto CLEAN;
 					}
 				}
-				json_decref(odata_id);
-				json_decref(sub_obj);
 				free(url_link);
 			}
-			json_decref(members);
 			json_decref(json_body);
 		}
 	}
@@ -819,7 +795,6 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 			WARN("subscriptionmgr check_subscription: couldn't "
 			     "get a destination from js_string_value");
 			u_map_clean(&map_header);
-			json_decref(json_dest);
 			json_decref(json_body);
 			ulfius_clean_request(&request);
 			ulfius_clean_response(&response);
@@ -831,13 +806,11 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 			WARN("Subscription for host %s is expired",
 					cred->host);
 			u_map_clean(&map_header);
-			json_decref(json_dest);
 			json_decref(json_body);
 			ulfius_clean_request(&request);
 			ulfius_clean_response(&response);
 			return FALSE;
 		}
-		json_decref(json_dest);
 		json_decref(json_body);
 	}
 	u_map_clean(&map_header);

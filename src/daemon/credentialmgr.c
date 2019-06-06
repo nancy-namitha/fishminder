@@ -133,9 +133,6 @@ char *get_session_url(char *host) {
 	returnurl = strdup(json_string_value(odata_session_link));
 
 	// Clean up
-	json_decref(odata_session_link);
-	json_decref(sessions);
-	json_decref(links);
 	json_decref(json_body);
 	if (U_OK != ulfius_clean_response(&response)){
 		CRIT( "error: could not clean response\n");
@@ -203,6 +200,7 @@ char *get_session_token(struct Credentials *mycreds, const char* db_path) {
 	res = ulfius_set_json_body_request(&request, authbody);
 	if (res != 0) {
 		printf("Could not set authbody\n");
+		ulfius_clean_request(&request);
 		return NULL;
 	}
 	res = ulfius_send_http_request(&request, &response);
