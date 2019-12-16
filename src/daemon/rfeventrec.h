@@ -112,6 +112,7 @@ struct Events {
         int time;
         int isclearmessage;
         char originofcondition[256];
+	char target_uuid[256];
         char messageid[256];
         char category[64];
 };
@@ -137,6 +138,7 @@ struct userdata {
         int port;
         GCond data_flag;
         gboolean shutdown;
+	gboolean aggregationmode;
 
 };
 

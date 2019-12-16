@@ -40,6 +40,7 @@ struct lsnthread {
 struct Clearing {
 	char host[256];
 	char originofcondition[256];
+	char target_uuid[256];
 	char messageid[256];
 	int time;
 	char clearmessage[256];

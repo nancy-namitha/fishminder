@@ -599,9 +599,9 @@ int deleteclearing(struct Clearing *input, const char* db_path) {
 
 
 	/* Create SQL statement */
-	sql = sqlite3_mprintf("DELETE FROM events WHERE host='%s' AND "
+	sql = sqlite3_mprintf("DELETE FROM events WHERE host='%s' OR nagiostarget='%s' AND "
 			      "originofcondition='%s' AND messageid='%s';",
-			      input->host, input->originofcondition,
+			      input->host, input->target_uuid, input->originofcondition,
 			      messageid2clear);
 	if(!sql){
 		CRIT( "Failed to allocate enough memory");
@@ -658,10 +658,10 @@ int commitclearing2db(struct Clearing *input, const char* db_path) {
 	}
 	/* Create SQL statement */
 	sql = sqlite3_mprintf("INSERT INTO clearing (host,originofcondition,"
-			"messageid,time,clearmessage) "
-			"VALUES ('%s','%s','%s','%d','%s');",
-			input->host, input->originofcondition, input->messageid,
-			input->time, input->clearmessage);
+			"nagiostarget,messageid,time,clearmessage) "
+			"VALUES ('%s','%s','%s','%s','%d','%s');",
+			input->host, input->originofcondition, input->target_uuid,
+			input->messageid, input->time, input->clearmessage);
 
 	if(!sql){
 		CRIT( "Failed to allocate enough memory");
@@ -704,12 +704,12 @@ int commitevent2db(struct Events *input, const char* db_path) {
 	/* Create SQL statement */
 	sql = sqlite3_mprintf("INSERT INTO events (host,severity,message,"
 			"resolution,time,isclearing,originofcondition,"
-			"messageid,category) VALUES "
-			"('%s','%s','%s','%s','%d','%d','%s','%s','%s');",
+			"nagiostarget,messageid,category) VALUES "
+			"('%s','%s','%s','%s','%d','%d','%s','%s','%s','%s');",
 			input->host, input->severity, input->message,
 			input->resolution, input->time, input->isclearmessage,
-			input->originofcondition, input->messageid,
-			input->category);
+			input->originofcondition, input->target_uuid,
+			input->messageid, input->category);
 
 	if(!sql){
 		CRIT( "Failed to allocate enough memory");
@@ -746,6 +746,8 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	       *originofcondition, *messageargs, *messagearg,
 	       *clearinglogic, *tmpclearingarray;
 	registryentryname = tmpchar = messageidchar = retchar = timechar = NULL;
+	char **split = NULL, *target_uuid = NULL;
+	const char *originofcondition_string = NULL;
 	// struct Events event;
 	int i = 0, j = 0;
 	regitem = regitemmessage = resolution = clearinglogic = NULL;
@@ -841,6 +843,12 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		free(timechar);
 		return 1;
 	}
+	originofcondition_string = json_string_value(originofcondition);
+	if (originofcondition_string != "") {
+		split = g_strsplit(originofcondition_string, "/", -1);
+		target_uuid = split[4];
+	//              target_ip = get_target_ip_from_uuid(target_uuid);
+	}
 	messageargs = json_object_get(eventobj, "MessageArgs");
 	if (NULL != messageargs) {
 		if (json_is_array(messageargs)) {
@@ -852,7 +860,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 					strdup(json_string_value(messagearg));
 			}
 		} else {
-			messageargsarray = malloc(sizeof(char*));
+		messageargsarray = malloc(sizeof(char*));
 			messageargsarray[0] =
 				strdup(json_string_value(messageargs));
 		}
@@ -881,13 +889,15 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 
 	// Populate the DB Events object
 	strcpy(event->host, host);
-	strcpy(event->severity, json_string_value(severity));
 	strcpy(event->resolution, json_string_value(resolution));
 	strcpy(event->originofcondition,
 	       json_string_value(originofcondition));
+	strcpy(event->target_uuid,
+			target_uuid);
 	strcpy(event->category, json_string_value(healthcategory));
 	event->time = atoi(timeret);
 	// Cleanup
+	g_strfreev(split);
 	free(messageidchar); // Will this be dangerous?
 	free(timechar);
 	free(tmpchar);
@@ -913,6 +923,7 @@ int callback_post (const struct _u_request *request,
 	event.isclearmessage = 0; // Need to be initialized
 	struct userdata* input_action = (struct userdata*) user_data;
 	json_body = ulfius_get_json_body_request(request, NULL);
+	char **split = NULL, *target_uuid = NULL;
 	if(!json_is_object(json_body))
 	{
 		CRIT( "error: commit data is not an object\n");
@@ -1015,6 +1026,16 @@ int callback_post (const struct _u_request *request,
 			strcpy(clearing.host, event.host);
 			strcpy(clearing.originofcondition,
 			       event.originofcondition);
+			if (clearing.originofcondition != "" && input_action->aggregationmode == TRUE){
+				split = g_strsplit(clearing.originofcondition, "/", -1);
+				target_uuid = split[4];
+				if(target_uuid != ""){
+					strcpy(clearing.target_uuid, target_uuid);
+				}
+				g_strfreev(split);
+				split = NULL;
+				//              target_ip = get_target_ip_from_uuid(target_uuid);
+			}
 			strcpy(clearing.messageid, event.messageid);
 			clearing.time = event.time;
 			for (j=0; j < json_array_size(*clrmsgs); j++) {
