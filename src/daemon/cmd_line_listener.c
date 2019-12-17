@@ -220,7 +220,7 @@ incoming_callback  (GSocketService *service,
 	DBG(" %s \n %s \n %s \n %s", action, host, username, password);
 	//	DBG("Message was: \"%s\"\n", message);
 	g_mutex_lock(data.ulfius_lock);
-	action_ret = fminder_action(action, host, username, password);
+	action_ret = fminder_action(action, host, username, password, data.aggregationmode);
 	g_mutex_unlock(data.ulfius_lock);
 	if (action_ret != NULL) {
 		// We have a problem need to send back the action_ret char

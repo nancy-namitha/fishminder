@@ -271,7 +271,7 @@ gboolean is_this_my_subscription(struct Credentials* cred, char *sub_url,
 }
 
 char *subscribe(struct Credentials* cred, char* destination, int port,
-		const char* db_path){
+		const char* db_path, gboolean aggregatormode){
 	struct _u_request request;
 	struct _u_response response;
 	struct Events *input = NULL;
@@ -308,8 +308,15 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 	}
 	ASPRINTF(&url, "https://%s%s", cred->host, subscription_uri);
 	free(subscription_uri);
-	ASPRINTF(&postfields, REDFISH_SUBSCRIPTION_POST,
-			destination, port );
+	/* Build the subscritpion request body according to
+	 * aggregator mode flag */
+	if (aggregatormode == TRUE){
+		ASPRINTF(&postfields, REDFISH_AGGREGATOR_SUBSCRIPTION_POST,
+				destination, port );
+	}else{
+		ASPRINTF(&postfields, REDFISH_SUBSCRIPTION_POST,
+				destination, port );
+	}
 	ulfius_init_request(&request);
 	ulfius_init_response(&response);
 	request.http_verb = o_strdup("POST");
@@ -546,7 +553,7 @@ CLEAN:
 
 
 char *fminder_action(char * action, char *host, char *username,
-		     char *password) {
+		     char *password, gboolean aggregatormode) {
 	struct Credentials* cred = NULL;
 	char* x_auth_token = NULL, *returnstring = NULL;
 	struct Events *event = NULL;
@@ -580,7 +587,7 @@ char *fminder_action(char * action, char *host, char *username,
 				     "the credentials in to "
 				     "database");
 				returnstring = subscribe(cred, DESTINATION,
-							LPORT, DB_PATH);
+							LPORT, DB_PATH, aggregatormode);
 				if (NULL != returnstring) {
 					g_free(cred);
 					cred = NULL;
@@ -854,7 +861,7 @@ void* subscription_mgr_thread( void *data){
 					DESTINATION, DB_PATH);
 			if(!rv){
 				if(NULL != subscribe(cred, DESTINATION, LPORT,
-					      DB_PATH)){
+					      DB_PATH, input_action->aggregationmode)){
 					/* Error Handling goes here*/
 					/*update db with an event*/
 					event = g_malloc0(sizeof(

@@ -30,7 +30,7 @@
 char* get_event_service_subscription_uri(struct Credentials *cred);
 gboolean is_this_my_subscription(struct Credentials* cred, char *sub_url, char* destination);
 char *subscribe(struct Credentials* cred, char* destination, int port,
-		const char* db_path);
+		const char* db_path, gboolean aggregatormode);
 char *unsubscribe(char* host, const char* db_path);
 gboolean check_subscription_status(struct Credentials* cred, char* destination,
 		const char* db_path);
@@ -75,5 +75,23 @@ void* subscription_mgr_thread(void* data);
     } \
 }"
 
+#define REDFISH_AGGREGATOR_SUBSCRIPTION_POST \
+        "{\"Destination\": \"https://%s:%d/redfish/v1/EventService/Subscriptions\",\
+    \"EventTypes\": [ \
+        \"Alert\" ], \
+    \"HttpHeaders\": {\"Content-Type\": \"application/json\"}, \
+    \"Context\": \"Public\", \
+    \"Protocol\": \"Redfish\", \
+    \"SubordinateResources\": true, \
+	  \"OriginResources\": [\"/redfish/v1/Systems\"], \
+    \"Oem\": { \
+        \"Hpe\": { \
+            \"DeliveryRetryIntervalInSeconds\": 30, \
+            \"RequestedMaxEventsToQueue\": 20, \
+            \"DeliveryRetryAttempts\": 5, \
+            \"RetireOldEventInMinutes\": 10 \
+        } \
+    } \
+}"
 
 #endif

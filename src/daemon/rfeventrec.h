@@ -170,4 +170,4 @@ struct Credentials_list {
 #endif
 
 char *fminder_action(char * action, char *host, char *username, char
-			*password);
+			*password, gboolean aggregatormode);
