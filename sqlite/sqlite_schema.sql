@@ -38,5 +38,10 @@ CONSTRAINT fk_credentials
 	REFERENCES events(host, originofcondition, messageid, time)
 	ON DELETE CASCADE
 );
+CREATE TABLE uuidhost (
+uuid TEXT not null,
+host TEXT not null,
+CONSTRAINT uuidhost_unique UNIQUE (uuid, host)
+);
 COMMIT;
 PRAGMA foreign_keys=on;

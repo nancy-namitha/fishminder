@@ -76,7 +76,7 @@ void* subscription_mgr_thread(void* data);
 }"
 
 #define REDFISH_AGGREGATOR_SUBSCRIPTION_POST \
-        "{\"Destination\": \"https://%s:%d/redfish/v1/EventService/Subscriptions\",\
+        "{\"Destination\": \"https://%s:%d/AggregatorEvents/Destination\",\
     \"EventTypes\": [ \
         \"Alert\" ], \
     \"HttpHeaders\": {\"Content-Type\": \"application/json\"}, \

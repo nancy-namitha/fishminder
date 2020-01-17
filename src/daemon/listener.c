@@ -207,6 +207,7 @@ json_t *get_event_registry(char *input_host,
 	if (mycreds == NULL) {
 		// Try it with hostname
 		mycreds_like = get_creds_like(input_host, db_path);
+		CRIT("Input host: %s", input_host);
 		mycreds = &mycreds_like->cred;
 		if(mycreds == NULL){
 			CRIT( "error: Could not retrieve DB info for "
@@ -557,6 +558,63 @@ int string2epoch(char *input, char *output) {
 }
 
 /**
+ * Function to delete entries from the uuidhost table based on uuid.
+**/
+
+int deleteuuidhost(char* uuid, const char* db_path) {
+	sqlite3 *db = NULL;
+	int rc = 0;
+	char *zErrMsg = NULL;
+	char *sql = NULL;
+
+	/* Open database */
+	rc = sqlite3_open(db_path, &db);
+	if( rc ) {
+		CRIT("Can't open database: %s\n", sqlite3_errmsg(db));
+		return 1;
+	}
+
+	/* Create SQL statement */
+	sql = sqlite3_mprintf("PRAGMA foreign_keys=ON");
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_close(db);
+		return 1;
+	}
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+	sqlite3_free(sql);
+
+	if( rc != SQLITE_OK ){
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		return 1;
+	}
+
+
+	/* Create SQL statement */
+	sql = sqlite3_mprintf("DELETE FROM uuidhost WHERE uuid='%s';",
+			      uuid);
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_close(db);
+		return 1;
+	}
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+
+	if( rc != SQLITE_OK ){
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		sqlite3_free(sql);
+		return 1;
+	}
+	sqlite3_close(db);
+	sqlite3_free(sql);
+	return 0;
+}
+
+/**
  * Function to delete entries from the event table based on ClearMessages
  * in a clear event
 **/
@@ -622,6 +680,64 @@ int deleteclearing(struct Clearing *input, const char* db_path) {
 	return 0;
 }
 
+/**
+ * Function to commit a uuid to host entry to the DB
+ * Takes an Struct Uuidhost and returns 0 on success and 1 if failure
+**/
+
+int commituuidhost2db(char *uuid, char* host, const char* db_path) {
+	sqlite3 *db = NULL;
+	int rc = 0;
+	char *zErrMsg = NULL;
+	char *sql = NULL;
+
+	/* Open database */
+	rc = sqlite3_open(db_path, &db);
+	if( rc ) {
+		CRIT("Can't open database: %s\n", sqlite3_errmsg(db));
+		return 1;
+	}
+
+	/* Create SQL statement */
+	sql = sqlite3_mprintf("PRAGMA foreign_keys=ON");
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_close(db);
+		return 1;
+	}
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+	sqlite3_free(sql);
+
+	if( rc != SQLITE_OK ){
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		return 1;
+	}
+	/* Create SQL statement */
+	sql = sqlite3_mprintf("INSERT INTO uuidhost (uuid,host)"
+			"VALUES ('%s','%s');",
+			uuid, host);
+
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_close(db);
+		return 1;
+	}
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+
+	if( rc != SQLITE_OK ){
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		sqlite3_free(sql);
+		return 1;
+	}
+	sqlite3_close(db);
+	sqlite3_free(sql);
+
+	return 0;
+}
 /**
  * Function to commit a clearing event entry to the DB
  * Takes an Struct Clearing and returns 0 on success and 1 if failure
@@ -729,6 +845,41 @@ int commitevent2db(struct Events *input, const char* db_path) {
 	sqlite3_free(sql);
 
 	return 0;
+}
+char* getuuidhostfromdb(char* uuid, char* o_host, const char* db_path) {
+        sqlite3 *db;
+        sqlite3_stmt *res;
+        // Open the DB and populate the Credential object
+        int rc = sqlite3_open(db_path, &db);
+        if (rc != SQLITE_OK) {
+                printf("Couldn't open database sqlite3");
+                return NULL;
+        }
+        char *sql = "SELECT host FROM uuidhost WHERE uuid = ?";
+        rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);
+        if (rc == SQLITE_OK) {
+                sqlite3_bind_text(res, 1, uuid,
+                                  strlen(uuid), NULL);
+        } else {
+                CRIT( "Failed to execute statement: %s\n",
+                        sqlite3_errmsg(db));
+        }
+        int step = sqlite3_step(res);
+        if (step == SQLITE_ROW) {
+                // Yay, we got a row back. We know about this guy
+		if ((const char *                       )sqlite3_column_text(res, 0) != NULL)
+                       strcpy(o_host, (const char *)sqlite3_column_text(res, 0));
+        } else {
+                // This guy is not known to us. We will return NULL
+                sqlite3_finalize(res);
+                sqlite3_close(db);
+                return NULL;
+        }
+        // Clean up DB and close it.
+        sqlite3_finalize(res);
+        sqlite3_close(db);
+
+        return o_host;
 }
 
 /**
@@ -843,12 +994,6 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		free(timechar);
 		return 1;
 	}
-	originofcondition_string = json_string_value(originofcondition);
-	if (originofcondition_string != "") {
-		split = g_strsplit(originofcondition_string, "/", -1);
-		target_uuid = split[4];
-	//              target_ip = get_target_ip_from_uuid(target_uuid);
-	}
 	messageargs = json_object_get(eventobj, "MessageArgs");
 	if (NULL != messageargs) {
 		if (json_is_array(messageargs)) {
@@ -892,8 +1037,6 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	strcpy(event->resolution, json_string_value(resolution));
 	strcpy(event->originofcondition,
 	       json_string_value(originofcondition));
-	strcpy(event->target_uuid,
-			target_uuid);
 	strcpy(event->category, json_string_value(healthcategory));
 	event->time = atoi(timeret);
 	// Cleanup
@@ -904,7 +1047,349 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 
 	return 0;
 }
+char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
+	struct _u_request *request;
+	struct _u_response *response;
+	json_error_t myjsonerr;
+	struct hostent *he = NULL;
+	struct in_addr **addr_list = NULL;
+	int res = 0;
+	char* url = NULL, ip[100] = "";
+	struct Credentials *mycreds = NULL;
+	struct Credentials_list *mycreds_like = NULL;
 
+	struct _u_map map_header;
+	ulfius_init_request(request);
+	ulfius_init_response(response);
+	// We need to get the IP
+	if((he = gethostbyname(aggregationhost)) == NULL)
+	{
+		// get the host info
+		herror("gethostbyname"); // Get rid of
+		return NULL;
+	}
+	addr_list = (struct in_addr **) he->h_addr_list;
+	for(int i =0; addr_list[i] != NULL; i++){
+		// Return the first one;
+		strcpy(ip, inet_ntoa(*addr_list[i]));
+		break;
+	}
+	ASPRINTF(&url, "https://%s/redfish/v1/Managers/%s/EthernetInterfaces/1", aggregationhost, uuid);
+	mycreds_like = get_creds_like(ip, DB_PATH);
+	mycreds = &mycreds_like->cred;
+	if (mycreds == NULL) {
+		// Try it with hostname
+		mycreds_like = get_creds_like(aggregationhost, DB_PATH);
+		CRIT("Input host: %s", aggregationhost);
+		mycreds = &mycreds_like->cred;
+		if(mycreds == NULL){
+			CRIT( "error: Could not retrieve DB info for "
+					"host %s\n", ip);
+			free(mycreds_like);
+			ulfius_clean_request(request);
+			ulfius_clean_response(response);
+			return NULL;
+		}
+	}
+	request->http_verb = o_strdup("GET");
+	request->http_url = o_strdup(url);
+	free(url);
+	url = NULL;
+	request->check_server_certificate = 0;
+
+	// Set up some info needed from the credentials
+	char* x_auth_token = mycreds->x_auth_token;
+	// Set up header
+	u_map_init(&map_header);
+	u_map_put(&map_header, "X-Auth-Token", x_auth_token);
+	u_map_copy_into(request->map_header, &map_header);
+	// Send the request to get the registry
+	res = ulfius_send_http_request(request, response);
+	if (res != U_OK) {
+		u_map_clean(&map_header);
+		free(mycreds_like);
+		ulfius_clean_request(request);
+		ulfius_clean_response(response);
+		return NULL;
+	}
+	// If we are not authorized we need a new x_auth_token
+	// and try again
+	if (response->status == 401) {
+		x_auth_token = get_session_token(mycreds, DB_PATH);
+		strcpy(mycreds->x_auth_token, x_auth_token);
+		u_map_put(&map_header, "X-Auth-Token", x_auth_token);
+		u_map_copy_into(request->map_header, &map_header);
+		res = ulfius_send_http_request(request, response);
+		if (response->status == 401) {
+			u_map_clean(&map_header);
+			free(mycreds_like);
+			ulfius_clean_request(request);
+			ulfius_clean_response(response);
+			return NULL;
+		}
+	}
+	// off the JSON
+	json_t *json_body = ulfius_get_json_body_response(response, &myjsonerr);
+	if(!json_is_object(json_body)) {
+		CRIT( "error: commit data is not an object\n");
+		// Need to also clean request, response and map_header
+		u_map_clean(&map_header);
+		json_decref(json_body);
+		free(mycreds_like);
+		ulfius_clean_request(request);
+		ulfius_clean_response(response);
+		return NULL;
+	}
+	json_t *ipaddresses = json_object_get(json_body, "IPv4Addresses");
+	if (ipaddresses == NULL) {
+		u_map_clean(&map_header);
+		json_decref(json_body);
+		free(mycreds_like);
+		ulfius_clean_request(request);
+		ulfius_clean_response(response);
+		return NULL;
+	}
+	// This is an array but we only need the first element. This is   kind of
+	// a big assumption and will need to be verified. However, what   to do
+	// with more than one link?
+	char *targetip = NULL;
+	for (int i=0; i < json_array_size(ipaddresses); i++) {
+		json_t *ipaddressobj = json_array_get(ipaddresses, i);
+		if (!json_is_object(ipaddressobj)) {
+			CRIT( "error: Got back a non json object\n");
+			u_map_clean(&map_header);
+			json_decref(json_body);
+			free(mycreds_like);
+			ulfius_clean_request(request);
+			ulfius_clean_response(response);
+			return NULL;
+		}
+		json_t *addressobj = json_object_get(ipaddressobj, "Address");
+		if (addressobj == NULL) {
+			CRIT( "error: Got back a non json object: "
+					"addressobj\n");
+			u_map_clean(&map_header);
+			json_decref(json_body);
+			free(mycreds_like);
+			ulfius_clean_request(request);
+			ulfius_clean_response(response);
+			return NULL;
+		}
+		targetip = strdup(json_string_value(addressobj));
+		break; // We only need the first one (there should be no  more)
+	}
+	// Decres the objects
+	json_decref(json_body);
+	// Some clenaup
+	u_map_clean(&map_header);
+	ulfius_clean_request(request);
+	ulfius_clean_response(response);
+	strcpy(targethost, targetip);
+	return targetip;
+}
+char* gethostfromuuid(char* uuid, char* host,char * aggregatorhost){
+
+	// lookup in the db first, to get host using uuid
+	char* err = getuuidhostfromdb(uuid,host,DB_PATH);
+	if(err != NULL){
+		// not found in the db
+		//Convert the uuid to host
+		fetchhostfrommanagers(uuid,host, aggregatorhost);
+		commituuidhost2db(uuid, host, DB_PATH);
+
+	}
+	return host;
+}
+
+/**
+ * aggregator callback function that goes through the event and output it to std output
+ */
+int aggregator_callback_post (const struct _u_request *request,
+		struct _u_response *response, void *user_data) {
+	json_t *json_body, *event_reg_body,*event_reg, *events, *eventsobj, *messageid,
+	**clrmsgs, *clearingmessage;
+	json_body = event_reg_body = event_reg = events = eventsobj = messageid =
+		clearingmessage = NULL;
+	struct _u_request reg_request;
+	struct _u_response reg_response;
+	int i = 0, ret = 0, sockaddrlen = 0, fail = 0, j = 0;
+	char *messageidchar = NULL, hostname[256]="", *tmpchar;
+	struct Events event = {0};
+	struct Clearing clearing ={0};
+	event.isclearmessage = 0; // Need to be initialized
+	struct userdata* input_action = (struct userdata*) user_data;
+	json_body = ulfius_get_json_body_request(request, NULL);
+	char **split = NULL, *target_uuid = NULL;
+	if(!json_is_object(json_body))
+	{
+		CRIT( "error: commit data is not an object\n");
+		json_decref(json_body);
+		return 1;
+	}
+	// Added for debug - Remove
+	/*
+	   tmpchar = json_dumps(json_body, 8);
+	   fprintf(stderr, "DEBUG: Full body\n %s \nDONE\n", tmpchar);
+	 */
+
+	// Check if this is an Array and process
+	if(json_is_array(json_body)) {
+		CRIT( "Error, the callback function did not expect "
+				"an array here\n");
+		json_decref(json_body);
+		return U_CALLBACK_ERROR;
+	}
+
+	// We need the hostname for the DB
+	if (request->client_address->sa_family == AF_INET) {
+		sockaddrlen = sizeof(struct sockaddr);
+	} else if (request->client_address->sa_family == AF_INET6) {
+		sockaddrlen = sizeof(struct sockaddr_in);
+	} else {
+		// We only support IPv4 and IPv6
+		CRIT( "Error, the callback function did not "
+				"expect this address family\n");
+		json_decref(json_body);
+		return U_CALLBACK_ERROR;
+	}
+	ret = getnameinfo(request->client_address, sockaddrlen,
+			hostname, 256, NULL, 0, 0);
+	if (0 != ret) {
+		CRIT( "getnameinfo couldn't get a hostname \n");
+		CRIT( "will go with ip address instead\n");
+	}
+	// Need to get the message(s) out of the json_body and commit them to
+	// the DB
+	events = json_object_get(json_body, "Events");
+	if (events == NULL) {
+		json_decref(json_body);
+		return 1;
+	}
+	i = json_array_size(events);
+	// Go through the events array
+	// Lock the mutex first
+	g_mutex_lock(input_action->ulfius_lock);
+	for (i=0; i < json_array_size(events); i++) {
+		// Need to add some checking here
+		eventsobj = json_array_get(events, i);
+		messageid = json_object_get(eventsobj, "MessageId");
+		if (messageid == NULL) {
+			json_decref(json_body);
+			return 1;
+		}
+		messageidchar = strdup(json_string_value(messageid));
+		tmpchar = strtok(messageidchar, ".");
+		event_reg_body = get_event_registry(hostname, tmpchar, DB_PATH,
+				&reg_request, &reg_response);
+		if (event_reg_body == NULL) {
+			CRIT( "The callback function failed to "
+					"get the event_registry\n");
+			//json_decref(json_body);
+			free(messageidchar);
+			ulfius_clean_request(&reg_request);
+			ulfius_clean_response(&reg_response);
+			return U_CALLBACK_ERROR;
+		}
+		event_reg = json_object_get(event_reg_body, "Messages");
+		if(!json_is_object(event_reg)){
+			CRIT( "The callback function failed to "
+					"get the event_registry\n");
+			json_decref(event_reg_body);
+			json_decref(json_body);
+			free(messageidchar);
+			ulfius_clean_request(&reg_request);
+			ulfius_clean_response(&reg_response);
+			return U_CALLBACK_ERROR;
+
+		}
+		// Get the Host ip from UUID if aggragation mode is true.
+		char *target_uuid = NULL;
+		json_t* originofcondition = NULL;
+		originofcondition = json_object_get(eventsobj, "OriginOfCondition");
+		if (originofcondition == NULL) {
+			return 1;
+		}
+		char* originofcondition_string = (char*)json_string_value(originofcondition);
+		if (originofcondition_string != "") {
+			split = g_strsplit(originofcondition_string, "/", -1);
+			target_uuid = split[4];
+			//              target_ip = get_target_ip_from_uuid(target_uuid);
+		}
+
+		char host[256]= {0};
+		 gethostfromuuid(target_uuid, host,hostname);
+		//First look in the uuidhost table if not found convert it.
+		// Add the entry of uuid and host  in to uuidhost table
+		clrmsgs = malloc(sizeof(json_t *));
+		ret = preparedbmessage(eventsobj, event_reg, host,
+				&event, clrmsgs);
+		if (ret != 0 ) {
+			CRIT("We got an event we cannot handle\n");
+			fail = 1;
+		}
+		// Commit to DB and check return code
+		if(!ISCLEARMODE || (event.isclearmessage != 1)) {
+			if (commitevent2db(&event, DB_PATH) != 0) {
+				CRIT("We couln't commit an Event to the "
+						"database\n");
+				fail = 1;
+			}
+		}
+		if (event.isclearmessage == 1) {
+			// Insert logic to populate a bunch of Clearing Structs
+			strcpy(clearing.host, event.host);
+			strcpy(clearing.originofcondition,
+					event.originofcondition);
+			if (clearing.originofcondition != "" && input_action->aggregationmode == TRUE){
+				split = g_strsplit(clearing.originofcondition, "/", -1);
+				target_uuid = split[4];
+				if(target_uuid != ""){
+					strcpy(clearing.target_uuid, target_uuid);
+					 gethostfromuuid(target_uuid, host,hostname);
+					 strcpy(clearing.host, host);
+				}
+				g_strfreev(split);
+				split = NULL;
+			}
+			strcpy(clearing.messageid, event.messageid);
+			clearing.time = event.time;
+			for (j=0; j < json_array_size(*clrmsgs); j++) {
+				clearingmessage =
+					json_array_get(*clrmsgs, j);
+				if (NULL == clearingmessage){
+					free(messageidchar);
+					json_decref(event_reg_body);
+					json_decref(json_body);
+					ulfius_clean_request(&reg_request);
+					ulfius_clean_response(&reg_response);
+					return 1;
+				}
+				strcpy(clearing.clearmessage,
+						json_string_value(clearingmessage));
+				if(ISCLEARMODE)
+					deleteclearing(&clearing, DB_PATH);
+				else
+					commitclearing2db(&clearing, DB_PATH);
+			}
+			// json_decref(*clrmsgs); // Causes a seg fault, likely
+			// because another object has been decreffed
+		}
+		free(clrmsgs); // verify
+	}
+
+	ulfius_set_string_body_response(response, 200, "Created");
+	free(messageidchar);
+	json_decref(event_reg_body);
+	json_decref(json_body);
+	ulfius_clean_request(&reg_request);
+	ulfius_clean_response(&reg_response);
+	// The below can probably be moved up to speed up things
+	g_mutex_unlock(input_action->ulfius_lock);
+	if (fail == 1)
+		return U_CALLBACK_ERROR;
+	else
+		return U_CALLBACK_CONTINUE;
+}
 /**
  * Callback function that goes through the event and output it to std output
  */
@@ -923,7 +1408,6 @@ int callback_post (const struct _u_request *request,
 	event.isclearmessage = 0; // Need to be initialized
 	struct userdata* input_action = (struct userdata*) user_data;
 	json_body = ulfius_get_json_body_request(request, NULL);
-	char **split = NULL, *target_uuid = NULL;
 	if(!json_is_object(json_body))
 	{
 		CRIT( "error: commit data is not an object\n");
@@ -1026,16 +1510,6 @@ int callback_post (const struct _u_request *request,
 			strcpy(clearing.host, event.host);
 			strcpy(clearing.originofcondition,
 			       event.originofcondition);
-			if (clearing.originofcondition != "" && input_action->aggregationmode == TRUE){
-				split = g_strsplit(clearing.originofcondition, "/", -1);
-				target_uuid = split[4];
-				if(target_uuid != ""){
-					strcpy(clearing.target_uuid, target_uuid);
-				}
-				g_strfreev(split);
-				split = NULL;
-				//              target_ip = get_target_ip_from_uuid(target_uuid);
-			}
 			strcpy(clearing.messageid, event.messageid);
 			clearing.time = event.time;
 			for (j=0; j < json_array_size(*clrmsgs); j++) {
@@ -1097,6 +1571,9 @@ void *listener(void *input) {
 	ulfius_add_endpoint_by_val(&instance, "POST",
 				   "/redfish/v1/EventService/Subscriptions",
 				   NULL, 0, &callback_post, input);
+	ulfius_add_endpoint_by_val(&instance, "POST",
+				   "/AggregatorEvents/Destination",
+				   NULL, 0, &aggregator_callback_post, input);
 
 	// Start the framework
 	char * key_pem = read_file(input_action->key_path);
