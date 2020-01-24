@@ -124,7 +124,7 @@ char* get_event_service_subscription_uri(struct Credentials *cred)
 		json_t *json_subscriptions = json_object_get(json_body, "Subscriptions");
 		json_t* json_odataId = json_object_get(json_subscriptions, "@odata.id");
 		char* url_to_subscribe = (char*)json_string_value(json_odataId);
-		printf("url_to_subscribe : %s",url_to_subscribe);
+		DBG("url_to_subscribe : %s",url_to_subscribe);
 		if(!url_to_subscribe){
 			CRIT("error: Url to subscribe is NULL");
 			json_decref(json_body);
@@ -383,10 +383,10 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 			return returnstring;
 		}
 		const char* location = u_map_get(header, "Location");
-		CRIT("Subscription Url for host %s is %s", cred->host,
+		DBG("Subscription Url for host %s is %s", cred->host,
 					location);
 		memset(cred->subscription_url, 0, 256);
-		CRIT("In Subscribe function: %s",location);
+		DBG("In Subscribe function: %s",location);
 		if (!strstr(location, "http")){
 			char *loc_url;
 			ASPRINTF(&loc_url,"https://%s%s",cred->host,location)

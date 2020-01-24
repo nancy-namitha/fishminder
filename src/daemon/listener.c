@@ -221,7 +221,7 @@ json_t *get_event_registry(char *input_host,
 
 	// Construct the request to the the registry
 	ASPRINTF(&url, "https://%s%s%s/", mycreds->host, REGISTRIES, input_eventid);
-	CRIT("Registires Request url: %s", url);
+	DBG("Registries Request url: %s", url);
 	request->http_verb = o_strdup("GET");
 	request->http_url = o_strdup(url);
 	free(url);
@@ -892,10 +892,10 @@ char* getuuidhostfromdb(char* uuid, char* o_host, const char* db_path) {
  * to this function and the clearmessages variable needs to be freed
  */
 int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
-		     struct Events *event, json_t **clearmsgs) {
+		struct Events *event, json_t **clearmsgs) {
 
 	char *registryentryname, *tmpchar, *messageidchar,
-	     **messageargsarray, *retchar, *timechar, timeret[EPOCHCHARSIZE];
+	**messageargsarray, *retchar, *timechar, timeret[EPOCHCHARSIZE];
 	json_t *regitem, *regitemmessage, *resolution, *severity,
 	       *oem, *oemhpe, *healthcategory, *eventmsg, *timeentry,
 	       *originofcondition, *messageargs, *messagearg,
@@ -925,7 +925,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	}
 	if (string2epoch(timechar, timeret) == 0) {
 		CRIT( "error: we couldn't convert the time "
-			"entry: %s\n", timechar);
+				"entry: %s\n", timechar);
 		free(timechar);
 		return 1;
 	}
@@ -974,7 +974,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	}
 	healthcategory = json_object_get(oemhpe, "HealthCategory");
 	if (healthcategory != NULL) {
-	strcpy(event->category, json_string_value(healthcategory));
+		strcpy(event->category, json_string_value(healthcategory));
 	}
 	// Is this event an event that clear others?
 	clearinglogic = json_object_get(oemhpe, "ClearingLogic");
@@ -996,20 +996,20 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	if (NULL != messageargs) {
 		if (json_is_array(messageargs)) {
 			messageargsarray = malloc(sizeof(char*) *
-						  json_array_size(messageargs));
+					json_array_size(messageargs));
 			for (i=0; i<json_array_size(messageargs); i++) {
 				messagearg = json_array_get(messageargs, i);
 				messageargsarray[i] =
 					strdup(json_string_value(messagearg));
 			}
 		} else {
-		messageargsarray = malloc(sizeof(char*));
+			messageargsarray = malloc(sizeof(char*));
 			messageargsarray[0] =
 				strdup(json_string_value(messageargs));
 		}
 		tmpchar = strdup(json_string_value(regitemmessage));
 		retchar = regarg2msg(tmpchar, messageargsarray,
-			    json_array_size(messageargs));
+				json_array_size(messageargs));
 		strcpy(event->message, retchar);
 		free(retchar);
 		// Need to also potentially free the array allocation
@@ -1027,7 +1027,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		// This is not a normal condition but HPE Proliant testevent has
 		// a bug where it doesn't send arguments
 		strcpy(event->message,
-		       json_string_value(regitemmessage));
+				json_string_value(regitemmessage));
 	}
 
 	// Populate the DB Events object
@@ -1308,16 +1308,11 @@ int aggregator_callback_post (const struct _u_request *request,
 			split = g_strsplit(originofcondition_string, "/", -1);
 			target_uuid = split[4];
 		}
-		/*************** Clear below lines ***********************/
-
-	/***************************Clear upto here ************************************/
 
 		char host[256]= {0};
 		gethostfromuuid(target_uuid, host,hostname);
-		 /*Clear the clumsiness later************Starting********************************/
-		CRIT("gethostfromuuid : %s", host);
+		DBG("gethostfromuuid : %s", host);
 		strcpy(event.host, host);
-		 /*Clear the clumsiness later*************Ending*********************************/
 		//First look in the uuidhost table if not found convert it.
 		// Add the entry of uuid and host  in to uuidhost table
 		clrmsgs = malloc(sizeof(json_t *));
@@ -1345,8 +1340,8 @@ int aggregator_callback_post (const struct _u_request *request,
 				target_uuid = split[4];
 				if(target_uuid != ""){
 					strcpy(clearing.target_uuid, target_uuid);
-					 gethostfromuuid(target_uuid, host,hostname);
-					 strcpy(clearing.host, host);
+					gethostfromuuid(target_uuid, host,hostname);
+					strcpy(clearing.host, host);
 				}
 				g_strfreev(split);
 				split = NULL;
