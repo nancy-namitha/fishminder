@@ -94,6 +94,7 @@ char* get_event_service_subscription_uri(struct Credentials *cred)
 	ulfius_init_response(&response);
 	request.http_verb = o_strdup("GET");
 	ASPRINTF(&url, "https://%s%s",cred->host, eventService_url);
+	printf("Subscription API : %s",url);
 	free(eventService_url);
 	request.http_url = o_strdup(url);
 	free(url);
@@ -123,6 +124,7 @@ char* get_event_service_subscription_uri(struct Credentials *cred)
 		json_t *json_subscriptions = json_object_get(json_body, "Subscriptions");
 		json_t* json_odataId = json_object_get(json_subscriptions, "@odata.id");
 		char* url_to_subscribe = (char*)json_string_value(json_odataId);
+		printf("url_to_subscribe : %s",url_to_subscribe);
 		if(!url_to_subscribe){
 			CRIT("error: Url to subscribe is NULL");
 			json_decref(json_body);
@@ -307,6 +309,7 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 		return returnstring;
 	}
 	ASPRINTF(&url, "https://%s%s", cred->host, subscription_uri);
+	CRIT("Complete Subscription API: %s\n",url);
 	free(subscription_uri);
 	/* Build the subscritpion request body according to
 	 * aggregator mode flag */
@@ -356,6 +359,7 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 	/* Send the request */
 	res = ulfius_send_http_request(&request, &response);
 	json_decref(postbody); //DANGEROUS?
+	CRIT("response code : %d", res);
 	if (res != U_OK){
 		returnstring = (char *) g_malloc0(40*(sizeof(char)));
 		strcpy(returnstring, "subscribe: Could not send http request");
@@ -365,6 +369,7 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 		ulfius_clean_response(&response);
 		return returnstring;
 	}
+	CRIT("response.status: %ld", response.status);
 	if(201 == response.status){
 		header = response.map_header;
 		if(0 == u_map_has_key(header, "Location")){
@@ -378,10 +383,17 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 			return returnstring;
 		}
 		const char* location = u_map_get(header, "Location");
-		DBG("Subscription Url for host %s is %s", cred->host,
+		CRIT("Subscription Url for host %s is %s", cred->host,
 					location);
 		memset(cred->subscription_url, 0, 256);
-		strcpy(cred->subscription_url, location);
+		CRIT("In Subscribe function: %s",location);
+		if (!strstr(location, "http")){
+			char *loc_url;
+			ASPRINTF(&loc_url,"https://%s%s",cred->host,location)
+			strcpy(cred->subscription_url, loc_url);
+		}else{
+			strcpy(cred->subscription_url, location);
+		}
 		// free((char *)location); // Dangerous?
 		/* Update DB with subscription URL below*/
 		if(update_creds(cred, db_path)){
@@ -415,7 +427,7 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 		}
 	}
 	if(409 == response.status){
-		DBG("Subscription is alive but some how subscription url"
+		CRIT("Subscription is alive but some how subscription url"
 				" is missing in the DB for host %s",
 				cred->host);
 		u_map_clean(&map_header);
@@ -704,8 +716,10 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 		return FALSE;
 	}
 	request.http_verb = o_strdup("GET");
+//	ASPRINTF(&url, "https://%s%s/", cred->host,cred->subscription_url);
+//	CRIT("check_subscription_status : %s \n",url);
 	request.http_url = o_strdup(cred->subscription_url);
-	free(url); // Looks like url is not needed?
+//	free(url); // Looks like url is not needed?
 	request.check_server_certificate = 0;
 	/* Set up header */
 	u_map_init(&map_header);
@@ -784,6 +798,7 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 	}
 	if(200 == response.status){
 		/* Subscription is alive*/
+		return TRUE;
 		json_t *json_body =
 			ulfius_get_json_body_response(&response, &myjsonerr);
 		if(!json_is_object(json_body)){

@@ -221,6 +221,7 @@ json_t *get_event_registry(char *input_host,
 
 	// Construct the request to the the registry
 	ASPRINTF(&url, "https://%s%s%s/", mycreds->host, REGISTRIES, input_eventid);
+	CRIT("Registires Request url: %s", url);
 	request->http_verb = o_strdup("GET");
 	request->http_url = o_strdup(url);
 	free(url);
@@ -467,7 +468,10 @@ json_t *get_event_registry(char *input_host,
 			ulfius_clean_response(response);
 			return NULL;
 		}
-		strcpy(mycreds->jsonetag, etagheader);
+		if (etagheader != NULL){
+			CRIT("get_event_registry function, etaheader :%s", etagheader);
+			strcpy(mycreds->jsonetag, etagheader);
+		}
 		if (update_creds(mycreds, db_path)){
 			CRIT( "A problem update the DB\n");
 			free(mycreds->jsonreg);
@@ -904,7 +908,9 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	regitem = regitemmessage = resolution = clearinglogic = NULL;
 	severity = oem = oemhpe = healthcategory = eventmsg = NULL;
 	originofcondition = NULL;
-
+	if (host != NULL){
+		strcpy(event->host, host);
+	}
 	eventmsg = json_object_get(eventobj, "MessageId");
 	if (eventmsg == NULL) {
 		return 1;
@@ -930,7 +936,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	tmpchar = strtok(messageidchar, ".");
 	while (tmpchar != NULL) {
 		registryentryname = tmpchar;
-		tmpchar = strtok(0, ".");
+		tmpchar = strtok(NULL, ".");
 	}
 	// Now we need to get all the objects out for the DB Message
 	// Add error check!
@@ -947,16 +953,12 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		return 1;
 	}
 	resolution = json_object_get(regitem, "Resolution");
-	if (resolution == NULL) {
-		free(messageidchar);
-		free(timechar);
-		return 1;
+	if (resolution != NULL) {
+		strcpy(event->resolution, json_string_value(resolution));
 	}
 	severity = json_object_get(regitem, "Severity");
-	if (severity == NULL) {
-		free(messageidchar);
-		free(timechar);
-		return 1;
+	if (severity != NULL) {
+		strcpy(event->severity, json_string_value(severity));
 	}
 	oem = json_object_get(regitem, "Oem");
 	if (oem == NULL) {
@@ -971,10 +973,8 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		return 1;
 	}
 	healthcategory = json_object_get(oemhpe, "HealthCategory");
-	if (healthcategory == NULL) {
-		free(messageidchar);
-		free(timechar);
-		return 1;
+	if (healthcategory != NULL) {
+	strcpy(event->category, json_string_value(healthcategory));
 	}
 	// Is this event an event that clear others?
 	clearinglogic = json_object_get(oemhpe, "ClearingLogic");
@@ -989,10 +989,8 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		clearmsgs[0] = tmpclearingarray;
 	}
 	originofcondition = json_object_get(eventobj, "OriginOfCondition");
-	if (originofcondition == NULL) {
-		free(messageidchar);
-		free(timechar);
-		return 1;
+	if (originofcondition != NULL) {
+		strcpy(event->originofcondition,json_string_value(originofcondition));
 	}
 	messageargs = json_object_get(eventobj, "MessageArgs");
 	if (NULL != messageargs) {
@@ -1033,11 +1031,6 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	}
 
 	// Populate the DB Events object
-	strcpy(event->host, host);
-	strcpy(event->resolution, json_string_value(resolution));
-	strcpy(event->originofcondition,
-	       json_string_value(originofcondition));
-	strcpy(event->category, json_string_value(healthcategory));
 	event->time = atoi(timeret);
 	// Cleanup
 	g_strfreev(split);
@@ -1048,8 +1041,8 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	return 0;
 }
 char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
-	struct _u_request *request;
-	struct _u_response *response;
+	struct _u_request request;
+	struct _u_response response;
 	json_error_t myjsonerr;
 	struct hostent *he = NULL;
 	struct in_addr **addr_list = NULL;
@@ -1059,8 +1052,8 @@ char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
 	struct Credentials_list *mycreds_like = NULL;
 
 	struct _u_map map_header;
-	ulfius_init_request(request);
-	ulfius_init_response(response);
+	ulfius_init_request(&request);
+	ulfius_init_response(&response);
 	// We need to get the IP
 	if((he = gethostbyname(aggregationhost)) == NULL)
 	{
@@ -1074,7 +1067,6 @@ char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
 		strcpy(ip, inet_ntoa(*addr_list[i]));
 		break;
 	}
-	ASPRINTF(&url, "https://%s/redfish/v1/Managers/%s/EthernetInterfaces/1", aggregationhost, uuid);
 	mycreds_like = get_creds_like(ip, DB_PATH);
 	mycreds = &mycreds_like->cred;
 	if (mycreds == NULL) {
@@ -1086,58 +1078,59 @@ char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
 			CRIT( "error: Could not retrieve DB info for "
 					"host %s\n", ip);
 			free(mycreds_like);
-			ulfius_clean_request(request);
-			ulfius_clean_response(response);
+			ulfius_clean_request(&request);
+			ulfius_clean_response(&response);
 			return NULL;
 		}
 	}
-	request->http_verb = o_strdup("GET");
-	request->http_url = o_strdup(url);
+	ASPRINTF(&url, "https://%s/redfish/v1/Managers/%s/EthernetInterfaces/1", mycreds->host, uuid);
+	request.http_verb = o_strdup("GET");
+	request.http_url = o_strdup(url);
 	free(url);
 	url = NULL;
-	request->check_server_certificate = 0;
+	request.check_server_certificate = 0;
 
 	// Set up some info needed from the credentials
 	char* x_auth_token = mycreds->x_auth_token;
 	// Set up header
 	u_map_init(&map_header);
 	u_map_put(&map_header, "X-Auth-Token", x_auth_token);
-	u_map_copy_into(request->map_header, &map_header);
+	u_map_copy_into(request.map_header, &map_header);
 	// Send the request to get the registry
-	res = ulfius_send_http_request(request, response);
+	res = ulfius_send_http_request(&request, &response);
 	if (res != U_OK) {
 		u_map_clean(&map_header);
 		free(mycreds_like);
-		ulfius_clean_request(request);
-		ulfius_clean_response(response);
+		ulfius_clean_request(&request);
+		ulfius_clean_response(&response);
 		return NULL;
 	}
 	// If we are not authorized we need a new x_auth_token
 	// and try again
-	if (response->status == 401) {
+	if (response.status == 401) {
 		x_auth_token = get_session_token(mycreds, DB_PATH);
 		strcpy(mycreds->x_auth_token, x_auth_token);
 		u_map_put(&map_header, "X-Auth-Token", x_auth_token);
-		u_map_copy_into(request->map_header, &map_header);
-		res = ulfius_send_http_request(request, response);
-		if (response->status == 401) {
+		u_map_copy_into(request.map_header, &map_header);
+		res = ulfius_send_http_request(&request, &response);
+		if (response.status == 401) {
 			u_map_clean(&map_header);
 			free(mycreds_like);
-			ulfius_clean_request(request);
-			ulfius_clean_response(response);
+			ulfius_clean_request(&request);
+			ulfius_clean_response(&response);
 			return NULL;
 		}
 	}
 	// off the JSON
-	json_t *json_body = ulfius_get_json_body_response(response, &myjsonerr);
+	json_t *json_body = ulfius_get_json_body_response(&response, &myjsonerr);
 	if(!json_is_object(json_body)) {
 		CRIT( "error: commit data is not an object\n");
 		// Need to also clean request, response and map_header
 		u_map_clean(&map_header);
 		json_decref(json_body);
 		free(mycreds_like);
-		ulfius_clean_request(request);
-		ulfius_clean_response(response);
+		ulfius_clean_request(&request);
+		ulfius_clean_response(&response);
 		return NULL;
 	}
 	json_t *ipaddresses = json_object_get(json_body, "IPv4Addresses");
@@ -1145,8 +1138,8 @@ char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
 		u_map_clean(&map_header);
 		json_decref(json_body);
 		free(mycreds_like);
-		ulfius_clean_request(request);
-		ulfius_clean_response(response);
+		ulfius_clean_request(&request);
+		ulfius_clean_response(&response);
 		return NULL;
 	}
 	// This is an array but we only need the first element. This is   kind of
@@ -1160,30 +1153,30 @@ char* fetchhostfrommanagers(char* uuid,char* targethost, char* aggregationhost){
 			u_map_clean(&map_header);
 			json_decref(json_body);
 			free(mycreds_like);
-			ulfius_clean_request(request);
-			ulfius_clean_response(response);
+			ulfius_clean_request(&request);
+			ulfius_clean_response(&response);
 			return NULL;
 		}
-		json_t *addressobj = json_object_get(ipaddressobj, "Address");
-		if (addressobj == NULL) {
+		ipaddressobj = json_object_get(ipaddressobj, "Address");
+		if (ipaddressobj == NULL) {
 			CRIT( "error: Got back a non json object: "
 					"addressobj\n");
 			u_map_clean(&map_header);
 			json_decref(json_body);
 			free(mycreds_like);
-			ulfius_clean_request(request);
-			ulfius_clean_response(response);
+			ulfius_clean_request(&request);
+			ulfius_clean_response(&response);
 			return NULL;
 		}
-		targetip = strdup(json_string_value(addressobj));
+		targetip = strdup(json_string_value(ipaddressobj));
 		break; // We only need the first one (there should be no  more)
 	}
 	// Decres the objects
 	json_decref(json_body);
 	// Some clenaup
 	u_map_clean(&map_header);
-	ulfius_clean_request(request);
-	ulfius_clean_response(response);
+	ulfius_clean_request(&request);
+	ulfius_clean_response(&response);
 	strcpy(targethost, targetip);
 	return targetip;
 }
@@ -1191,7 +1184,7 @@ char* gethostfromuuid(char* uuid, char* host,char * aggregatorhost){
 
 	// lookup in the db first, to get host using uuid
 	char* err = getuuidhostfromdb(uuid,host,DB_PATH);
-	if(err != NULL){
+	if(host != NULL){
 		// not found in the db
 		//Convert the uuid to host
 		fetchhostfrommanagers(uuid,host, aggregatorhost);
@@ -1284,11 +1277,11 @@ int aggregator_callback_post (const struct _u_request *request,
 		if (event_reg_body == NULL) {
 			CRIT( "The callback function failed to "
 					"get the event_registry\n");
-			//json_decref(json_body);
+			json_decref(json_body);
 			free(messageidchar);
-			ulfius_clean_request(&reg_request);
-			ulfius_clean_response(&reg_response);
-			return U_CALLBACK_ERROR;
+			//ulfius_clean_request(&reg_request);
+			//ulfius_clean_response(&reg_response);
+			return U_CALLBACK_CONTINUE;
 		}
 		event_reg = json_object_get(event_reg_body, "Messages");
 		if(!json_is_object(event_reg)){
@@ -1299,7 +1292,7 @@ int aggregator_callback_post (const struct _u_request *request,
 			free(messageidchar);
 			ulfius_clean_request(&reg_request);
 			ulfius_clean_response(&reg_response);
-			return U_CALLBACK_ERROR;
+			return U_CALLBACK_CONTINUE;
 
 		}
 		// Get the Host ip from UUID if aggragation mode is true.
@@ -1307,17 +1300,24 @@ int aggregator_callback_post (const struct _u_request *request,
 		json_t* originofcondition = NULL;
 		originofcondition = json_object_get(eventsobj, "OriginOfCondition");
 		if (originofcondition == NULL) {
-			return 1;
+			return U_CALLBACK_CONTINUE;
 		}
 		char* originofcondition_string = (char*)json_string_value(originofcondition);
 		if (originofcondition_string != "") {
+			strcpy(event.originofcondition,json_string_value(originofcondition));
 			split = g_strsplit(originofcondition_string, "/", -1);
 			target_uuid = split[4];
-			//              target_ip = get_target_ip_from_uuid(target_uuid);
 		}
+		/*************** Clear below lines ***********************/
+
+	/***************************Clear upto here ************************************/
 
 		char host[256]= {0};
-		 gethostfromuuid(target_uuid, host,hostname);
+		gethostfromuuid(target_uuid, host,hostname);
+		 /*Clear the clumsiness later************Starting********************************/
+		CRIT("gethostfromuuid : %s", host);
+		strcpy(event.host, host);
+		 /*Clear the clumsiness later*************Ending*********************************/
 		//First look in the uuidhost table if not found convert it.
 		// Add the entry of uuid and host  in to uuidhost table
 		clrmsgs = malloc(sizeof(json_t *));
