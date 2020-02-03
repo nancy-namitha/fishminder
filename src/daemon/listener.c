@@ -26,6 +26,52 @@
 #include "rfeventrec.h"
 #include "listener.h"
 #include "credentialmgr.h"
+int get_last_index_of_char(char* messageidchar, const char in, int* count);
+void get_registry_name(char *messageidchar, char* redistry_name);
+
+/**
+ * get_registry_name function is to extract the registry name from event messageid
+ * messageidchar: Input string from which we can extract registryname
+ * Returns:
+ *	redistry_name: Extracted registry name from messageID.
+ */
+void get_registry_name(char *messageidchar, char* redistry_name){
+	int occurances = 0;
+	int last_idx = get_last_index_of_char(messageidchar, '.', &occurances);
+	strncpy(redistry_name, messageidchar, last_idx);
+	if (occurances < 4) {
+		switch (occurances) {
+
+			case 3:
+				strcat(redistry_name, ".0");
+				break;
+			case 2:
+				strcat(redistry_name, ".0.0");
+				break;
+
+		}
+	}
+}
+/**
+ * get_last_index_of_char returns last index of given matching character.
+ * Also return number of occurances of given character.
+ * input_string: String that should be searched
+ * char_to_search: Input character to serach in input_string.
+ * Returns:
+ *	out_idx: Index of a last found char_to_search.
+ *	count: No.of occurances of char_to_search in input_string.
+ */
+int get_last_index_of_char(char* input_string, const char char_to_search, int* count) {
+	int out_idx = 0;
+	for (int i=0; input_string[i] != '\0'; i++){
+		if(input_string[i] == char_to_search){
+			out_idx = i;
+			*count = *count +1;
+		}
+	}
+	return out_idx;
+}
+
 
 /**
   * Function that returns position of last '.' in a string
@@ -1271,7 +1317,9 @@ int aggregator_callback_post (const struct _u_request *request,
 			return 1;
 		}
 		messageidchar = strdup(json_string_value(messageid));
-		tmpchar = strtok(messageidchar, ".");
+		char tmpchar[256] = {0};
+		memset(tmpchar, '\0', sizeof(tmpchar));
+		get_registry_name(messageidchar, tmpchar);
 		event_reg_body = get_event_registry(hostname, tmpchar, DB_PATH,
 				&reg_request, &reg_response);
 		if (event_reg_body == NULL) {
