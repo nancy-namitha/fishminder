@@ -707,9 +707,9 @@ int deleteclearing(struct Clearing *input, const char* db_path) {
 
 
 	/* Create SQL statement */
-	sql = sqlite3_mprintf("DELETE FROM events WHERE host='%s' OR nagiostarget='%s' AND "
+	sql = sqlite3_mprintf("DELETE FROM events WHERE host='%s' AND "
 			      "originofcondition='%s' AND messageid='%s';",
-			      input->host, input->target_uuid, input->originofcondition,
+			      input->host, input->originofcondition,
 			      messageid2clear);
 	if(!sql){
 		CRIT( "Failed to allocate enough memory");
@@ -824,9 +824,9 @@ int commitclearing2db(struct Clearing *input, const char* db_path) {
 	}
 	/* Create SQL statement */
 	sql = sqlite3_mprintf("INSERT INTO clearing (host,originofcondition,"
-			"nagiostarget,messageid,time,clearmessage) "
-			"VALUES ('%s','%s','%s','%s','%d','%s');",
-			input->host, input->originofcondition, input->target_uuid,
+			"messageid,time,clearmessage) "
+			"VALUES ('%s','%s','%s','%d','%s');",
+			input->host, input->originofcondition,
 			input->messageid, input->time, input->clearmessage);
 
 	if(!sql){
@@ -870,12 +870,12 @@ int commitevent2db(struct Events *input, const char* db_path) {
 	/* Create SQL statement */
 	sql = sqlite3_mprintf("INSERT INTO events (host,severity,message,"
 			"resolution,time,isclearing,originofcondition,"
-			"nagiostarget,messageid,category) VALUES "
-			"('%s','%s','%s','%s','%d','%d','%s','%s','%s','%s');",
+			"messageid,category) VALUES "
+			"('%s','%s','%s','%s','%d','%d','%s','%s','%s');",
 			input->host, input->severity, input->message,
 			input->resolution, input->time, input->isclearmessage,
-			input->originofcondition, input->target_uuid,
-			input->messageid, input->category);
+			input->originofcondition, input->messageid,
+			input->category);
 
 	if(!sql){
 		CRIT( "Failed to allocate enough memory");
@@ -917,7 +917,7 @@ char* getuuidhostfromdb(char* uuid, char* o_host, const char* db_path) {
         int step = sqlite3_step(res);
         if (step == SQLITE_ROW) {
                 // Yay, we got a row back. We know about this guy
-		if ((const char *                       )sqlite3_column_text(res, 0) != NULL)
+		if ((const char * )sqlite3_column_text(res, 0) != NULL)
                        strcpy(o_host, (const char *)sqlite3_column_text(res, 0));
         } else {
                 // This guy is not known to us. We will return NULL
@@ -1387,7 +1387,7 @@ int aggregator_callback_post (const struct _u_request *request,
 				split = g_strsplit(clearing.originofcondition, "/", -1);
 				target_uuid = split[4];
 				if(target_uuid != ""){
-					strcpy(clearing.target_uuid, target_uuid);
+					//strcpy(clearing.target_uuid, target_uuid);
 					gethostfromuuid(target_uuid, host,hostname);
 					strcpy(clearing.host, host);
 				}

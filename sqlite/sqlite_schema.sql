@@ -12,7 +12,6 @@ jsonreg BLOB
 
 CREATE TABLE events (
 host TEXT not null,
-nagiostarget TEXT,
 severity TEXT not null,
 message TEXT not null,
 resolution TEXT not null,
@@ -28,7 +27,6 @@ CREATE INDEX host_cred_idx on credentials(host);
 
 CREATE TABLE clearing (
 host TEXT not null,
-nagiostarget TEXT,
 originofcondition TEXT not null,
 messageid TEXT not null,
 time integer not null,
