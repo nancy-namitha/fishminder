@@ -36,6 +36,7 @@ static gchar* cfgfile = NULL;
 static gchar* optpidfile = NULL;
 static gchar* event_host = NULL;
 static gint event_port = 0;
+static gboolean aggregatormode = FALSE;
 static gboolean runasforeground = FALSE;
 static gboolean daemonize   = FALSE;
 static gboolean verbose_flag    = FALSE;
@@ -112,7 +113,7 @@ gboolean check_pidfile(const char *pidfile)
 		if ((pid > 0) && (pid == getpid() || (kill(pid, 0) < 0))) {
 			unlink(pidfile);
 		} else {
-			CRIT("There is another active OpenHPI daemon.");
+			CRIT("There is another active fishminder daemon.");
 			return FALSE;
 		}
 	}
@@ -219,7 +220,7 @@ incoming_callback  (GSocketService *service,
 	DBG(" %s \n %s \n %s \n %s", action, host, username, password);
 	//	DBG("Message was: \"%s\"\n", message);
 	g_mutex_lock(data.ulfius_lock);
-	action_ret = fminder_action(action, host, username, password);
+	action_ret = fminder_action(action, host, username, password, data.aggregationmode);
 	g_mutex_unlock(data.ulfius_lock);
 	if (action_ret != NULL) {
 		// We have a problem need to send back the action_ret char
@@ -259,6 +260,9 @@ static GOptionEntry entries[] = {
 		"Hostname to listen for events", "IP/Hostname" },
 	{ "port", 'p', 0, G_OPTION_ARG_INT, &event_port,
 		"Port number to listen for events", "Port number" },
+	{ "aggregatormode", 'a', 0, G_OPTION_ARG_NONE, &aggregatormode,
+		"If this flag provided, then fishminder can talk with\n"
+	"                                 targets like iLO Aggregators.", NULL},
 	{ "pidfile", 'f', 0, G_OPTION_ARG_FILENAME, &optpidfile,
 	"Overrides the default path/name for the daemon pid file.\n"
 	"                                 The option is optional.", "pidfile" },
@@ -289,9 +293,9 @@ main (int argc, char **argv)
 	config_init(&cfg);
 	g_log_set_default_handler(log_handler, 0);
 	option_ctxt = g_option_context_new(
-			"- Enter the Hostname & Port number to listen for events."
+			"- Enter the Hostname & Port number to listen for events.\n"
 			"A typical invocation might be\n"
-			"./rfeventrec -c /ect/rfeventrec/rfeventrec.conf");
+			"./fishminderd -c /ect/fishminderd/fishminderd.conf");
 	g_option_context_add_main_entries (option_ctxt, entries, NULL);
 
 	if (!g_option_context_parse(option_ctxt, &argc, &argv, &error))
@@ -379,6 +383,7 @@ main (int argc, char **argv)
 		printf("Cannot set SIGINT handler. Exiting");
 		exit(1);
 	}
+	data.aggregationmode = aggregatormode;
 	if (!runasforeground) {
 		if (!daemonized(pidfile)) {
 			exit(8);
