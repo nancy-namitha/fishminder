@@ -370,6 +370,53 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 		return returnstring;
 	}
 	CRIT("response.status: %ld", response.status);
+	// below check is a special check it has to be done before any of the check
+	// here we try to get actual response and status code, and then continue as usual
+	if (202 == response.status){
+                // get the taskmon uri from location header
+                // keep polling untill we get status code other than 202
+                struct _u_map *header = NULL;
+                header = response.map_header;
+                const char* location = u_map_get(header, "Location");
+                url = NULL;
+                ASPRINTF(&url, "https://%s%s", cred->host, location);
+
+
+//              get_request()
+                u_map_clean(&map_header);
+                ulfius_clean_request(&request);
+                ulfius_clean_response(&response);
+                ulfius_init_request(&request);
+                ulfius_init_response(&response);
+                request.http_verb = o_strdup("GET");
+                request.http_url = o_strdup(url);
+                request.check_server_certificate = 0;
+                free(url);
+                url = NULL;
+                /* Set up header */
+                u_map_init(&map_header);
+                u_map_put(&map_header, "X-Auth-Token", cred->x_auth_token);
+                // request.map_header = &map_header; segfaults
+                u_map_copy_into(request.map_header, &map_header);
+                /* Send the request to get the registry */
+		while (1){
+			ulfius_clean_response(&response);
+			ulfius_init_response(&response);
+			res = ulfius_send_http_request(&request, &response);
+			if (res != U_OK){
+				CRIT("ulfius_send_http_request failed");
+				returnstring = (char *) g_malloc0(55*(sizeof(char)));
+				strcpy(returnstring, "ulfius_send_http_request failed "
+						"in subscribe function");
+				goto CLEAN;
+			}
+			if (response.status != 202){
+				break;
+			}
+		}
+
+
+        }
 	if(201 == response.status){
 		header = response.map_header;
 		if(0 == u_map_has_key(header, "Location")){
