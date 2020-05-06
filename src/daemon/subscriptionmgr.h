@@ -83,7 +83,7 @@ void* subscription_mgr_thread(void* data);
     \"Context\": \"Public\", \
     \"Protocol\": \"Redfish\", \
     \"SubordinateResources\": true, \
-	  \"OriginResources\": [\"/redfish/v1/Systems\"], \
+	  \"OriginResources\": [], \
     \"Oem\": { \
         \"Hpe\": { \
             \"DeliveryRetryIntervalInSeconds\": 30, \
