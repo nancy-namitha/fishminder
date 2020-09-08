@@ -26,6 +26,7 @@
 #include "rfeventrec.h"
 #include "listener.h"
 #include "credentialmgr.h"
+#include <ctype.h>
 int get_last_index_of_char(char* messageidchar, const char in, int* count);
 void get_registry_name(char *messageidchar, char* redistry_name);
 
@@ -578,10 +579,17 @@ char *regarg2msg (char *eventmsg, char **argarray, int arraysize) {
 	strcpy(outchar, "");
 	for (i=0; i < arraysize; i++) {
 		pointchar = strchr(pointchar, '%');
-		strncat(outchar, left, (pointchar - left));
-		strcat(outchar, argarray[i]);
-		pointchar = pointchar + strlen(argarray[i]) + 1;
-		left = pointchar;
+
+		if (pointchar != NULL) {
+			strncat(outchar, left, (pointchar - left));
+			strcat(outchar, argarray[i]);
+			pointchar++;
+			while (isdigit(*pointchar))  {
+				pointchar++;
+			}
+			//pointchar = pointchar + strlen(argarray[i]) + 1;
+			left = pointchar;
+		}
 	}
 	if (strlen(left) > 0)
 		strcat(outchar, left);
