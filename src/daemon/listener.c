@@ -269,6 +269,7 @@ json_t *get_event_registry(char *input_host,
 	// Construct the request to the the registry
 	ASPRINTF(&url, "https://%s%s%s/", mycreds->host, REGISTRIES, input_eventid);
 	DBG("Registries Request url: %s", url);
+
 	request->http_verb = o_strdup("GET");
 	request->http_url = o_strdup(url);
 	free(url);
@@ -904,6 +905,56 @@ int commitevent2db(struct Events *input, const char* db_path) {
 
 	return 0;
 }
+
+
+/**
+ *
+ * */
+
+int dumpevent2file(struct Events *input, char* clear_msg, const char *file_path) {
+
+	time_t eventrawtime = input->time;
+    	struct tm  ts;
+	char       event_time[80];
+	FILE *fp;
+	fp = fopen(file_path, "a+");
+
+	if(fp == NULL) {
+    		// if error opening the file show error message and exit the program
+    		CRIT("Error opening a file %s \n", file_path);
+    		return(1);
+	}
+
+    // Format time, "ddd yyyy-mm-dd hh:mm:ss zzz"
+    	ts = *localtime(&eventrawtime);
+    	strftime(event_time, sizeof(event_time), "%Y-%m-%d %H:%M:%S %Z", &ts);
+	int severity_level = 3;
+	if ( strcasecmp("critical", input->severity) == 0) 
+		severity_level = 2;
+	else if ( strcasecmp ("warning", input->severity) == 0)
+		severity_level = 1;
+	else if ( strcasecmp ("ok", input->severity) == 0)
+                severity_level = 0;
+
+
+	if (clear_msg == NULL) 
+		fprintf(fp, "%s|%s|%s|%s|%s|%d|%s|%s|%s|%d\n",
+                        event_time,input->host, input->severity, input->message,
+                        input->resolution,  input->isclearmessage,
+                        input->originofcondition, input->messageid,
+                        input->category, severity_level);
+	else 
+		fprintf(fp, "%s|%s|%s|%s|%s|%d|%s|%s|%s|%d\n",
+                        event_time,input->host, input->severity, input->message,
+                        input->resolution,  input->isclearmessage,
+                        input->originofcondition, clear_msg,
+                        input->category, severity_level);
+
+	fclose(fp);
+	return 0;
+
+}
+
 char* getuuidhostfromdb(char* uuid, char* o_host, const char* db_path) {
         sqlite3 *db;
         sqlite3_stmt *res;
@@ -941,6 +992,60 @@ char* getuuidhostfromdb(char* uuid, char* o_host, const char* db_path) {
 }
 
 /**
+ * Function to check if the  clear message event is present if yes
+ * return that message
+ * */
+
+char* getclearmsgfromdb(struct Clearing *input,  char* o_clear_msg, const char* db_path) {
+	char messageid2clear[256]="";
+        sqlite3 *db;
+        sqlite3_stmt *res;
+
+        strncpy(messageid2clear, input->messageid,
+                        get_last_dot_pos(input->messageid)+1);
+        strncat(messageid2clear, input->clearmessage,
+                strlen(input->clearmessage));
+
+        // Open the DB and populate the Credential object
+        int rc = sqlite3_open(db_path, &db);
+        if (rc != SQLITE_OK) {
+                printf("Couldn't open database sqlite3");
+                return NULL;
+        }
+
+
+
+        char *sql = "SELECT messageid FROM events WHERE host = ? AND originofcondition = ? AND messageid = ?";
+        rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);
+        if (rc == SQLITE_OK) {
+                sqlite3_bind_text(res, 1,  input->host, strlen(input->host), NULL);
+                sqlite3_bind_text(res, 2,  input->originofcondition, strlen(input->originofcondition), NULL);
+                sqlite3_bind_text(res, 3,  messageid2clear, strlen(messageid2clear), NULL);
+        } else {
+                CRIT( "Failed to execute statement: %s\n",
+                        sqlite3_errmsg(db));
+        }
+
+
+        int step = sqlite3_step(res);
+        if (step == SQLITE_ROW) {
+                // Yay, we got a row back. We know about this guy
+                if ((const char * )sqlite3_column_text(res, 0) != NULL)
+                       strcpy(o_clear_msg, (const char *)sqlite3_column_text(res, 0));
+        } else {
+                // This guy is not known to us. We will return NULL
+                sqlite3_finalize(res);
+                sqlite3_close(db);
+                return NULL;
+        }
+        // Clean up DB and close it.
+        sqlite3_finalize(res);
+        sqlite3_close(db);
+
+        return o_clear_msg;
+}
+
+/**
  * Function to produce an Event struct that can be used to commit to the DB.
  * The Event struct event needs to have been allocated prior to a call
  * to this function and the clearmessages variable needs to be freed
@@ -967,14 +1072,17 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	}
 	eventmsg = json_object_get(eventobj, "MessageId");
 	if (eventmsg == NULL) {
+		fprintf(stderr," 1. *******************************");
 		return 1;
 	}
 	timeentry = json_object_get(eventobj, "EventTimestamp");
 	if (timeentry == NULL) {
+		fprintf(stderr," 2. *******************************");
 		return 1;
 	}
 	timechar = strdup(json_string_value(timeentry));
 	if (timechar == NULL) {
+		fprintf(stderr," 3. *******************************");
 		return 1;
 	}
 	if (string2epoch(timechar, timeret) == 0) {
@@ -992,10 +1100,15 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		registryentryname = tmpchar;
 		tmpchar = strtok(NULL, ".");
 	}
+
+	// Nancy
+	//fprintf(stderr, "DEBUG: registryentryname\n %s \nDONE\n", registryentryname);
+
 	// Now we need to get all the objects out for the DB Message
 	// Add error check!
 	regitem = json_object_get(event_reg, registryentryname);
 	if (regitem == NULL) {
+		fprintf(stderr," 4. *******************************");
 		free(messageidchar);
 		free(timechar);
 		return 1;
@@ -1018,12 +1131,14 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	if (oem == NULL) {
 		free(messageidchar);
 		free(timechar);
+		fprintf(stderr," 5. *******************************");
 		return 1;
 	}
 	oemhpe = json_object_get(oem, "Hpe");
 	if (oemhpe == NULL) {
 		free(messageidchar);
 		free(timechar);
+		fprintf(stderr," 6. *******************************");
 		return 1;
 	}
 	healthcategory = json_object_get(oemhpe, "HealthCategory");
@@ -1038,6 +1153,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		if (tmpclearingarray == NULL) {
 			free(messageidchar);
 			free(timechar);
+		fprintf(stderr," 7. *******************************");
 			return 1;
 		}
 		clearmsgs[0] = tmpclearingarray;
@@ -1274,11 +1390,11 @@ int aggregator_callback_post (const struct _u_request *request,
 		return 1;
 	}
 	// Added for debug - Remove
-	/*
-	   tmpchar = json_dumps(json_body, 8);
+	
+/*	   tmpchar = json_dumps(json_body, 8);
 	   fprintf(stderr, "DEBUG: Full body\n %s \nDONE\n", tmpchar);
-	 */
-
+	 
+*/
 	// Check if this is an Array and process
 	if(json_is_array(json_body)) {
 		CRIT( "Error, the callback function did not expect "
@@ -1378,6 +1494,7 @@ int aggregator_callback_post (const struct _u_request *request,
 			CRIT("We got an event we cannot handle\n");
 			fail = 1;
 		}
+		
 		// Commit to DB and check return code
 		if(!ISCLEARMODE || (event.isclearmessage != 1)) {
 			if (commitevent2db(&event, DB_PATH) != 0) {
@@ -1385,6 +1502,10 @@ int aggregator_callback_post (const struct _u_request *request,
 						"database\n");
 				fail = 1;
 			}
+
+			if (IS_EVENT_WRITE_FILE)
+				dumpevent2file (&event, NULL, ILO_LOG_PATH);
+
 		}
 		if (event.isclearmessage == 1) {
 			// Insert logic to populate a bunch of Clearing Structs
@@ -1417,6 +1538,18 @@ int aggregator_callback_post (const struct _u_request *request,
 				}
 				strcpy(clearing.clearmessage,
 						json_string_value(clearingmessage));
+				
+				//Get if the clear message is present 
+				if (IS_EVENT_WRITE_FILE) {
+					char o_clear_msg[256] = {0};
+					char *err = getclearmsgfromdb(&clearing,  o_clear_msg, DB_PATH);
+					//if o_clear_msg is not null write to  file
+					if (o_clear_msg != NULL && strlen (o_clear_msg) > 0) {
+						//fprintf(stderr, "DEBUG: matched clearmessage: [%s] \n", o_clear_msg);
+						dumpevent2file (&event, o_clear_msg, ILO_LOG_PATH);
+					} 
+				}
+
 				if(ISCLEARMODE)
 					deleteclearing(&clearing, DB_PATH);
 				else
@@ -1555,6 +1688,8 @@ int callback_post (const struct _u_request *request,
 				     "database\n");
 				fail = 1;
 			}
+			if (IS_EVENT_WRITE_FILE)
+				dumpevent2file (&event, NULL, ILO_LOG_PATH);
 		}
 		if (event.isclearmessage == 1) {
 			// Insert logic to populate a bunch of Clearing Structs
@@ -1576,6 +1711,16 @@ int callback_post (const struct _u_request *request,
 				}
 				strcpy(clearing.clearmessage,
 				       json_string_value(clearingmessage));
+				//Get if the clear message is present 
+				if (IS_EVENT_WRITE_FILE) {
+					char o_clear_msg[256] = {0};
+					char *err = getclearmsgfromdb(&clearing,  o_clear_msg, DB_PATH);
+					//if o_clear_msg is not null write to  file
+					if (o_clear_msg != NULL && strlen (o_clear_msg) > 0) {
+						//fprintf(stderr, "DEBUG: matched clearmessage: [%s] \n", o_clear_msg);
+						dumpevent2file (&event, o_clear_msg, ILO_LOG_PATH);
+					} 
+				}
 				if(ISCLEARMODE)
 					deleteclearing(&clearing, DB_PATH);
 				else

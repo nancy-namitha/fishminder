@@ -283,6 +283,7 @@ main (int argc, char **argv)
 {
 	config_t cfg;
 	const char* pidfile = NULL, *db_path = NULL, *key_path = NULL;
+	const char* ilo_log_path = NULL, *write_to_file = NULL;
 	const char *cert_path = NULL;
         const char* user = NULL;
 	GThread* subscription_thread_id = NULL;
@@ -358,6 +359,21 @@ main (int argc, char **argv)
 		return 1;
 	}
 	strcpy(data.cert_path, cert_path);
+
+	if(!config_lookup_string(&cfg, "ILO_LOG_FILE_PATH", &ilo_log_path)){
+		CRIT("ILO_LOG_FILE_PATH not found in configuration file.");
+		return 1;
+	}
+	strcpy(ILO_LOG_PATH, ilo_log_path);
+
+	if(!config_lookup_string(&cfg, "DUMP_EVENTS_TO_FILE", &write_to_file)){
+		CRIT("DUMP_EVENTS_TO_FILE not found in configuration file.");
+		return 1;
+	}
+	if (strcmp(write_to_file, "TRUE") == 0) {
+		IS_EVENT_WRITE_FILE = true;
+	} else 
+		IS_EVENT_WRITE_FILE = false;
 
 	if(!check_pidfile(pidfile)){
 		CRIT("PID file check failed. Exiting.");

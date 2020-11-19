@@ -53,6 +53,8 @@
 #include <errno.h>
 #include <libconfig.h>
 
+#include <stdbool.h>
+
 #include <glib.h>
 #include <gio/gio.h>
 
@@ -122,6 +124,8 @@ char CERT_PATH[256]; // Global variable for CERT_PATH
 char KEY_PATH[256]; // Global variable for KEY_PATH
 char *DESTINATION; // Global variable for event destination
 int LPORT; // Global variable for event port
+char ILO_LOG_PATH[256]; // Global variable for ILO_LOG_PATH
+bool IS_EVENT_WRITE_FILE; // Global Variable for if events need to be written to file
 
 struct userdata {
         GMutex *mutex_lock;

@@ -15,6 +15,7 @@ fishminder.db: Makefile
 confdir = $(sysconfdir)/fishminder
 certdir = $(sysconfdir)/fishminder/certs
 privdir = $(sysconfdir)/fishminder/certs/private
+elogdir =  $(localstatedir)/log/fishminderd
 dist_conf_DATA = fishminderd.conf sqlite/fishminder.db
 
 fminder_CFLAGS = $(GLIB_CFLAGS) $(GIO_CFLAGS)
@@ -33,15 +34,19 @@ gen-config:
 	echo "CERT_PATH = \"$(certdir)/cert.pem\"" >> $(confdir)/fishminderd.conf
 	echo "KEY_PATH = \"$(privdir)/server.key\"" >> $(confdir)/fishminderd.conf
 	echo "DB_PATH = \"$(confdir)/fishminder.db\"" >> $(confdir)/fishminderd.conf
+	echo "DUMP_EVENTS_TO_FILE = \"TRUE\"" >> $(confdir)/fishminderd.conf
+	echo "ILO_LOG_FILE_PATH = \"$(elogdir)/ilo_redfish_event.log\"" >> $(confdir)/fishminderd.conf
 
 install-exec-hook:
 	-mkdir -p $(confdir)
 	-mkdir -p $(certdir)
 	-mkdir -p $(privdir)
 	-mkdir -p $(runstatedir)/fishminderd
+	-mkdir -p $(elogdir)
 
 uninstall-hook:
 	-rmdir $(privdir)
 	-rmdir $(certdir)
 	-rmdir $(confdir)
 	-rmdir $(runstatedir)/fishminderd
+	-rmdir -p $(elogdir)
