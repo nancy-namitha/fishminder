@@ -269,6 +269,9 @@ json_t *get_event_registry(char *input_host,
 	// Construct the request to the the registry
 	ASPRINTF(&url, "https://%s%s%s/", mycreds->host, REGISTRIES, input_eventid);
 	DBG("Registries Request url: %s", url);
+	//Nancy
+	 fprintf(stderr, "DEBUG: URL \n %s  DONE\n", url);
+	 //Nancy
 
 	request->http_verb = o_strdup("GET");
 	request->http_url = o_strdup(url);
@@ -287,6 +290,9 @@ json_t *get_event_registry(char *input_host,
 
 	// Send the request to get the registry
 	res = ulfius_send_http_request(request, response);
+	//Nancy
+	 fprintf(stderr, "DEBUG: Response \n %ld  DONE\n", response->status);
+	 //Nancy
 	if (res != U_OK) {
 		u_map_clean(&map_header);
 		free(mycreds_like);
@@ -1158,7 +1164,15 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		}
 		clearmsgs[0] = tmpclearingarray;
 	}
-	originofcondition = json_object_get(eventobj, "OriginOfCondition");
+	json_t* originofcondition_obj = NULL;
+	originofcondition_obj = json_object_get(eventobj, "OriginOfCondition");
+
+	if(json_is_object(originofcondition_obj)){
+		originofcondition = json_object_get(originofcondition_obj, "@odata.id");
+	}  else {
+		originofcondition = json_object_get(eventobj, "OriginOfCondition");
+	}
+	//originofcondition = json_object_get(eventobj, "OriginOfCondition");
 	if (originofcondition != NULL) {
 		strcpy(event->originofcondition,json_string_value(originofcondition));
 	}
@@ -1391,10 +1405,10 @@ int aggregator_callback_post (const struct _u_request *request,
 	}
 	// Added for debug - Remove
 	
-/*	   tmpchar = json_dumps(json_body, 8);
+	   tmpchar = json_dumps(json_body, 8);
 	   fprintf(stderr, "DEBUG: Full body\n %s \nDONE\n", tmpchar);
 	 
-*/
+
 	// Check if this is an Array and process
 	if(json_is_array(json_body)) {
 		CRIT( "Error, the callback function did not expect "
@@ -1441,11 +1455,19 @@ int aggregator_callback_post (const struct _u_request *request,
 			return 1;
 		}
 		messageidchar = strdup(json_string_value(messageid));
-		char tmpchar[256] = {0};
+		char tmpchar[256] = {0}, *ttmpchar;
 		memset(tmpchar, '\0', sizeof(tmpchar));
 		get_registry_name(messageidchar, tmpchar);
 		event_reg_body = get_event_registry(hostname, tmpchar, DB_PATH,
 				&reg_request, &reg_response);
+		//Nancy
+	   	fprintf(stderr, "DEBUG: Full Host\n %s  -- MessageIDi - %s \n DONE\n", hostname, messageidchar);
+		//Nancy
+		// // Added for debug - Remove
+
+           /*ttmpchar = json_dumps(eventsobj, 8);
+           fprintf(stderr, "DEBUG: eventsobj  body\n %s \nDONE\n", ttmpchar);
+*/
 		if (event_reg_body == NULL) {
 			CRIT( "The callback function failed to "
 					"get the event_registry\n");
@@ -1456,6 +1478,11 @@ int aggregator_callback_post (const struct _u_request *request,
 			return U_CALLBACK_CONTINUE;
 		}
 		event_reg = json_object_get(event_reg_body, "Messages");
+		//nancy
+           /*ttmpchar = json_dumps(event_reg, 8);
+           fprintf(stderr, "DEBUG: Event Reg\n %s \n  DONE\n", ttmpchar);
+	   */
+	   //nancy
 		if(!json_is_object(event_reg)){
 			CRIT( "The callback function failed to "
 					"get the event_registry\n");
@@ -1469,8 +1496,20 @@ int aggregator_callback_post (const struct _u_request *request,
 		}
 		// Get the Host ip from UUID if aggragation mode is true.
 		char *target_uuid = NULL;
-		json_t* originofcondition = NULL;
-		originofcondition = json_object_get(eventsobj, "OriginOfCondition");
+		json_t* originofcondition = NULL; 
+		json_t* originofcondition_obj = NULL;
+		originofcondition_obj = json_object_get(eventsobj, "OriginOfCondition");
+
+		if(json_is_object(originofcondition_obj)){
+			//fprintf(stderr,"DEBUG: *********************** JSON Object *****************\n");
+			originofcondition = json_object_get(originofcondition_obj, "@odata.id");
+		}  else {
+			originofcondition = json_object_get(eventsobj, "OriginOfCondition");
+		}
+
+           /*ttmpchar = json_dumps(originofcondition, 8);
+           fprintf(stderr, "DEBUG: originofcondition %s \n  DONE\n", ttmpchar);
+*/
 		if (originofcondition == NULL) {
 			return U_CALLBACK_CONTINUE;
 		}
