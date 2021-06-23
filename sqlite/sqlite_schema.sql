@@ -41,5 +41,11 @@ uuid TEXT not null,
 host TEXT not null,
 CONSTRAINT uuidhost_unique UNIQUE (uuid, host)
 );
+CREATE TABLE subscriptions (
+host TEXT not null,
+subscription_type TEXT not null,
+subscription_url TEXT,
+CONSTRAINT subscription_unique UNIQUE (host, subscription_type)
+);
 COMMIT;
 PRAGMA foreign_keys=on;

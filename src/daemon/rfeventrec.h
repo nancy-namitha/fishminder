@@ -125,7 +125,9 @@ char KEY_PATH[256]; // Global variable for KEY_PATH
 char *DESTINATION; // Global variable for event destination
 int LPORT; // Global variable for event port
 char ILO_LOG_PATH[256]; // Global variable for ILO_LOG_PATH
+char METRICS_LOG_FILE_PATH[256]; // Global variable for METRICS_LOG_FILE_PATH
 bool IS_EVENT_WRITE_FILE; // Global Variable for if events need to be written to file
+bool ENABLE_METRICS_SUBSCRIPTION; // Global Variable for if telemetry should be enabled.
 
 struct userdata {
         GMutex *mutex_lock;
@@ -163,6 +165,17 @@ struct Credentials_list {
         struct Credentials_list* next;
 };
 
+struct Subscriptions {
+        char host[256];
+        char subscription_type[256];
+        char subscription_url[256];
+
+};
+
+struct Subscription_list {
+	struct Subscriptions subscription;
+	struct Subscription_list* next;
+};
 
 #define ASPRINTF(...)              \
     if (asprintf( __VA_ARGS__ ) == -1) {  \
@@ -173,5 +186,5 @@ struct Credentials_list {
 
 #endif
 
-char *fminder_action(char * action, char *host, char *username, char
+char *fminder_action(char *subs_type, char * action, char *host, char *username, char
 			*password, gboolean aggregatormode);

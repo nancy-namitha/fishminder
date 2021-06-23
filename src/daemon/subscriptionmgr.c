@@ -29,6 +29,300 @@
 #include "subscriptionmgr.h"
 #include "credentialmgr.h"
 #include "listener.h"
+
+
+/*
+ * update_subscription
+ * returns: 0 on success 1 on failure
+ * takes: struct Credentials pointer
+ *
+ * */
+int update_subscription(struct Subscriptions* input_subscription, const char* db_path){
+	sqlite3 *db = NULL;
+	char *zErrMsg = 0;
+	int rc = 0;
+	char *sql = NULL;
+	sqlite3_stmt *pstmt = NULL;
+	//const char insertblob[] = "oijfoiwjefoijoeifowfjweofhueivbb";
+	/* Open database */
+	rc = sqlite3_open(db_path, &db);
+
+	if( rc ) {
+		CRIT( "Can't open database: %s\n",
+				sqlite3_errmsg(db));
+		return(1);
+	} else {
+		DBG( "Opened database successfully\n");
+	}
+
+	/* Create merged SQL statement */
+	sql = sqlite3_mprintf("UPDATE subscriptions set "
+			"subscription_url= ifnull('%s',subscription_url) "
+			"where host = '%s' and subscription_type = '%s';", 
+			input_subscription->subscription_url,
+			input_subscription->host,
+			input_subscription->subscription_type);
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_free(sql);
+		sqlite3_close(db);
+		return 1;
+	}
+	/* Execute SQL statement */
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+	sqlite3_free(sql);
+
+	if( rc != SQLITE_OK ) {
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		return 1;
+	} else {
+		DBG( "Operation done successfully\n");
+	}
+	// Clean up DB and close it.
+	sqlite3_close(db);
+	return 0;
+}
+
+
+/**
+ * get_all_creds_callback
+ * returns: 1 on failure 0 on success.
+ * takes: Void* data_head (Credentials_list* pointer as void*)
+ * Needs to be freed
+ */
+
+int get_all_subs_callback(void* data_head, int argc, char **argv,
+                char **azColName) {
+
+	struct Subscription_list *head = (struct Subscription_list*) data_head;
+	if(!head){
+		return 1;
+	}
+	struct Subscription_list* tmp = (struct Subscription_list*)
+					calloc(1,sizeof(struct Subscription_list));
+	tmp->next = NULL;
+	strcpy(tmp->subscription.host, argv[0]);
+	strcpy(tmp->subscription.subscription_type, argv[1]);
+	if(argv[2] != NULL){
+		strcpy(tmp->subscription.subscription_url, argv[2]);
+	}else{
+		strcpy(tmp->subscription.subscription_url, "");
+	}
+	while(head->next){
+		head = head->next;
+	}
+	head->next = tmp;
+	/*
+	   for (int i = 0; i < argc; i++) {
+
+	   printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
+	   }
+
+	   printf("\n");
+	   */
+	return 0;
+}
+
+struct Subscription_list *get_subscription_for_host(char* input_host ,
+		const char* db_path) 
+{
+
+	sqlite3 *db;
+	char *err_msg = 0, *sql = NULL;
+	struct Subscription_list subs_head = {{{0}}};
+	int rc = sqlite3_open(db_path, &db);
+
+	if (rc != SQLITE_OK) {
+
+		CRIT( "Cannot open database: %s\n",
+				sqlite3_errmsg(db));
+		sqlite3_close(db);
+
+		return NULL;
+	}
+
+	ASPRINTF(&sql, "SELECT * FROM subscriptions WHERE host LIKE '%s%%'", input_host);
+
+	rc = sqlite3_exec(db, sql, get_all_subs_callback, &subs_head,
+			&err_msg);
+	free(sql);
+	if (rc != SQLITE_OK ) {
+
+		CRIT( "Failed to select data\n");
+		CRIT( "SQL error: %s\n", err_msg);
+
+		sqlite3_free(err_msg);
+		sqlite3_close(db);
+
+		return NULL;
+	}
+
+	sqlite3_close(db);
+
+	return subs_head.next;
+}
+
+struct Subscriptions *get_subscription(char *input_host, char *subs_type, const char* db_path) 
+{
+	struct Subscriptions *mysubscriptions = NULL;
+	sqlite3 *db;
+	sqlite3_stmt *res;
+	// Open the DB and populate the Credential object
+	int rc = sqlite3_open(db_path, &db);
+	if (rc != SQLITE_OK) {
+		printf("Couldn't open database sqlite3");
+		return NULL;
+	}
+	char *sql = "SELECT host,subscription_type,subscription_url "
+				" FROM subscriptions WHERE host = ? and subscription_type = ?";
+	rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);
+	if (rc == SQLITE_OK) {
+		sqlite3_bind_text(res, 1, input_host,
+				  strlen(input_host), NULL);
+		sqlite3_bind_text(res, 2, subs_type,
+				  strlen(subs_type), NULL);
+	} else {
+		CRIT( "Failed to execute statement: %s\n",
+			sqlite3_errmsg(db));
+	}
+	int step = sqlite3_step(res);
+	mysubscriptions = g_malloc0(sizeof(struct Subscriptions));
+	if(!mysubscriptions){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_finalize(res);
+		sqlite3_close(db);
+		return NULL;
+	}
+	// NULL the creds
+	if (step == SQLITE_ROW) {
+		// Yay, we got a row back. We know about this guy
+		strcpy(mysubscriptions->host,
+		       (const char *)sqlite3_column_text(res, 0));
+		strcpy(mysubscriptions->subscription_type,
+		       (const char *)sqlite3_column_text(res, 1));
+		// Could be NULL
+		if (NULL !=  sqlite3_column_text(res, 2)) {
+			strcpy(mysubscriptions->subscription_url,
+			       (const char *)sqlite3_column_text(res, 2));
+		} else {
+			strcpy(mysubscriptions->subscription_url, "");
+		}
+	} else {
+		// This guy is not known to us. We will return NULL
+		free(mysubscriptions);
+		sqlite3_finalize(res);
+		sqlite3_close(db);
+		return NULL;
+	}
+	// Clean up DB and close it.
+	sqlite3_finalize(res);
+	sqlite3_close(db);
+
+
+	return mysubscriptions;
+}
+
+
+/*
+ * insert_subscription
+ * returns: 0 on success 1 on failure
+ * takes: struct Subscriptions pointer
+ *
+ * */
+int insert_subscription(struct Subscriptions* input_subs, const char* db_path){
+	sqlite3 *db = NULL;
+	char *zErrMsg = 0;
+	int rc = 0;
+	char *sql = NULL;
+
+	/* Open database */
+	rc = sqlite3_open(db_path, &db);
+	if( rc ) {
+		CRIT("Can't open database: %s\n", sqlite3_errmsg(db));
+		return 1;
+	} else {
+		CRIT( "Opened database successfully\n");
+	}
+
+	/* Create SQL statement */
+	sql = sqlite3_mprintf("INSERT INTO subscriptions (host,subscription_type, subscription_url) VALUES"
+			"('%s','%s','%s');",
+			input_subs->host, input_subs->subscription_type,
+			input_subs->subscription_url);
+
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_close(db);
+		return 1;
+	}
+	/* Execute SQL statement */
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+
+	if( rc != SQLITE_OK ){
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		sqlite3_free(sql);
+		return 1;
+	} else {
+		DBG( "Records created successfully\n");
+	}
+	sqlite3_close(db);
+	sqlite3_free(sql);
+	return 0;
+}
+
+/*
+ * delete_subscription
+ * returns: 0 on success 1 on failure
+ * takes: char ponter to hostname
+ *
+ * */
+int delete_subscription (char *hostname, char  *subs_type, const char* db_path){
+	sqlite3 *db = NULL;
+	char *zErrMsg = 0;
+	int rc = 0;
+	char *sql = NULL;
+
+	/* Open database */
+	rc = sqlite3_open(db_path, &db);
+
+	if( rc ) {
+		CRIT( "Can't open database: %s\n",
+				sqlite3_errmsg(db));
+		return(1);
+	} else {
+		CRIT( "Opened database successfully\n");
+	}
+
+	/* Create merged SQL statement */
+	sql = sqlite3_mprintf("DELETE FROM subscriptions WHERE host = '%s' and subscription_type = '%s';",
+			hostname, subs_type);
+
+	if(!sql){
+		CRIT( "Failed to allocate enough memory");
+		sqlite3_close(db);
+		return 1;
+	}
+	/* Execute SQL statement */
+	rc = sqlite3_exec(db, sql, 0, 0, &zErrMsg);
+	sqlite3_free(sql);
+
+	if( rc != SQLITE_OK ) {
+		CRIT( "SQL error: %s\n", zErrMsg);
+		sqlite3_free(zErrMsg);
+		sqlite3_close(db);
+		return 1;
+	} else {
+		DBG( "Operation done successfully\n");
+	}
+	sqlite3_close(db);
+	return 0;
+}
+
+
 char* get_event_service_subscription_uri(struct Credentials *cred)
 {
 	struct _u_request request;
@@ -145,13 +439,25 @@ char* get_event_service_subscription_uri(struct Credentials *cred)
 	return url;
 
 }
-char *unsubscribe(char* input_host, const char* db_path){
+char *unsubscribe(char* input_host, char* subs_type, const char* db_path){
 	struct Credentials *cred = NULL;
+	struct Subscriptions *subs = NULL;
 	struct _u_request request;
 	struct _u_response response;
 	struct _u_map map_header;
 	char *returnstring = NULL;
 	int res = 0;
+
+	subs = get_subscription(input_host, subs_type,  DB_PATH);
+	if (!subs) { 
+		g_free(subs);
+		subs = NULL;
+		returnstring = (char *) g_malloc0(81*(sizeof(char)));
+		strcpy(returnstring, "unsubscribe: no such subscription in the DB, "
+		       "or other DB issues. Look in syslog.");
+		return returnstring;
+
+	}
 	cred = get_creds(input_host, db_path);
 	if(!cred){
 		g_free(cred);
@@ -161,18 +467,19 @@ char *unsubscribe(char* input_host, const char* db_path){
 		       "or other DB issues. Look in syslog.");
 		return returnstring;
 	}
-	if(!cred->subscription_url || !cred->x_auth_token ||
-			!strcmp(cred->subscription_url, "") ||
+	if(!subs->subscription_url || !cred->x_auth_token ||
+			!strcmp(subs->subscription_url, "") ||
 			!strcmp(cred->x_auth_token, "")){
 		/* Subscription is not alive lets remove this record,
 		 * by return NULL here*/
 		g_free(cred);
+		g_free(subs);
 		return NULL;
 	}
 	ulfius_init_request(&request);
 	ulfius_init_response(&response);
 	request.http_verb = o_strdup("DELETE");
-	request.http_url = o_strdup(cred->subscription_url);
+	request.http_url = o_strdup(subs->subscription_url);
 	request.check_server_certificate = 0;
 	/* make sure x_auth_token is valid, before trying to unsubscribe*/
 	char *x_auth_token = get_session_token(cred, db_path);
@@ -185,6 +492,7 @@ char *unsubscribe(char* input_host, const char* db_path){
 	/* Send the request to delete the subscription */
 	res = ulfius_send_http_request(&request, &response);
 	g_free(cred);
+	g_free(subs);
 	cred = NULL;
 	if (res != U_OK){
 		CRIT("Could not send http request \n");
@@ -272,7 +580,7 @@ gboolean is_this_my_subscription(struct Credentials* cred, char *sub_url,
 	return myreturn;
 }
 
-char *subscribe(struct Credentials* cred, char* destination, int port,
+char *subscribe(struct Credentials* cred, struct Subscriptions* subs, char* destination, int port,
 		const char* db_path, gboolean aggregatormode){
 	struct _u_request request;
 	struct _u_response response;
@@ -309,15 +617,20 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 		return returnstring;
 	}
 	ASPRINTF(&url, "https://%s%s", cred->host, subscription_uri);
-	CRIT("Complete Subscription API: %s\n",url);
+	//CRIT("Complete Subscription API: %s\n",url);
 	free(subscription_uri);
 	/* Build the subscritpion request body according to
 	 * aggregator mode flag */
-	if (aggregatormode == TRUE){
-		ASPRINTF(&postfields, REDFISH_AGGREGATOR_SUBSCRIPTION_POST,
-				destination, port );
-	}else{
-		ASPRINTF(&postfields, REDFISH_SUBSCRIPTION_POST,
+	if (!strcmp(subs->subscription_type , "Alert")) {
+		if (aggregatormode == TRUE){
+			ASPRINTF(&postfields, REDFISH_AGGREGATOR_SUBSCRIPTION_POST,
+					destination, port );
+		}else{
+			ASPRINTF(&postfields, REDFISH_SUBSCRIPTION_POST,
+					destination, port );
+		}
+	} else {
+		ASPRINTF(&postfields, REDFISH_METRICS_SUBSCRIPTION_POST,
 				destination, port );
 	}
 	ulfius_init_request(&request);
@@ -359,7 +672,7 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 	/* Send the request */
 	res = ulfius_send_http_request(&request, &response);
 	json_decref(postbody); //DANGEROUS?
-	CRIT("response code : %d", res);
+	//CRIT("response code : %d", res);
 	if (res != U_OK){
 		returnstring = (char *) g_malloc0(40*(sizeof(char)));
 		strcpy(returnstring, "subscribe: Could not send http request");
@@ -369,7 +682,7 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 		ulfius_clean_response(&response);
 		return returnstring;
 	}
-	CRIT("response.status: %ld", response.status);
+	//CRIT("response.status: %ld", response.status);
 	// below check is a special check it has to be done before any of the check
 	// here we try to get actual response and status code, and then continue as usual
 	if (202 == response.status){
@@ -430,20 +743,20 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 			return returnstring;
 		}
 		const char* location = u_map_get(header, "Location");
-		DBG("Subscription Url for host %s is %s", cred->host,
-					location);
-		memset(cred->subscription_url, 0, 256);
+		DBG("Subscription Url for host %s is %s for Event Type %s", cred->host,
+					location, subs->subscription_type);
+		memset(subs->subscription_url, 0, 256);
 		DBG("In Subscribe function: %s",location);
 		if (!strstr(location, "http")){
 			char *loc_url;
 			ASPRINTF(&loc_url,"https://%s%s",cred->host,location)
-			strcpy(cred->subscription_url, loc_url);
+			strcpy(subs->subscription_url, loc_url);
 		}else{
-			strcpy(cred->subscription_url, location);
+			strcpy(subs->subscription_url, location);
 		}
 		// free((char *)location); // Dangerous?
 		/* Update DB with subscription URL below*/
-		if(update_creds(cred, db_path)){
+		if(update_subscription(subs, db_path)){
 			returnstring = (char *) g_malloc0(39*(sizeof(char)));
 			CRIT("Failed to update the Subscription url"
 				" %s in to db", cred->subscription_url);
@@ -544,11 +857,13 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 				if(!json_is_object(sub_obj)){
 					continue;
 				}
-				json_t *odata_id = json_object_get(sub_obj,
-								   "@odata.id");
-				if(!json_is_object(odata_id)){
+
+				json_t *odata_id = json_object_get(sub_obj, "@odata.id");
+
+
+				/*if(!json_is_object(odata_id)){
 					continue;
-				}
+				} */
 				url_link = (char*)json_string_value(odata_id);
 				if(!url_link){
 					continue;
@@ -557,14 +872,14 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 					(char*)json_string_value(odata_id));
 				if(is_this_my_subscription(cred, url_link,
 						destination)){
-					memset(cred->subscription_url, 0, 256);
-					strcpy(cred->subscription_url,
+					memset(subs->subscription_url, 0, 256);
+					strcpy(subs->subscription_url,
 							url_link);
-					if(update_creds(cred, db_path)){
+					if(update_subscription(subs, db_path)){
 						CRIT(
 						"Failed to update the "
 						"Subscription url %s in to db",
-						cred->subscription_url);
+						subs->subscription_url);
 						returnstring = (char *)
 						g_malloc0(40*(sizeof(char)));
 						strcpy(returnstring, "Internal "
@@ -598,10 +913,19 @@ char *subscribe(struct Credentials* cred, char* destination, int port,
 						goto CLEAN;
 					}
 				}
-				free(url_link);
+				g_free(url_link);
 			}
 			json_decref(json_body);
 		}
+	}
+	if(400 == response.status){
+		returnstring = (char *) g_malloc0(32*(sizeof(char)));
+		CRIT("\n We received bad request Error"
+				" host --> %s \n ", cred->host);
+		strcpy(returnstring, "We received 400 Error");
+		ulfius_clean_request(&request);
+		ulfius_clean_response(&response);
+		return returnstring;
 	}
 CLEAN:
 	u_map_clean(&map_header);
@@ -610,15 +934,75 @@ CLEAN:
 	return returnstring;
 }
 
+char *subscribe_events (  struct Credentials* cred, char *host,char *subs_type, gboolean aggregatormode)
+{
+	struct Subscriptions* subs = NULL;
+	struct Events *event = NULL;
+	time_t action_time;
+	char *returnstring = NULL;
 
-char *fminder_action(char * action, char *host, char *username,
+	subs = get_subscription(host, subs_type,  DB_PATH);
+	if (!subs) {
+		subs = NULL;
+		subs = g_malloc0(sizeof( struct Subscriptions));
+		strcpy(subs->host, host);
+		strcpy(subs->subscription_type, subs_type);
+		if(!insert_subscription(subs, DB_PATH)){
+			INFO("Successfully inserted "
+		     		"the subscription in to "
+		     		"database");
+
+			returnstring = subscribe(cred, subs, DESTINATION,
+					LPORT, DB_PATH, aggregatormode);
+			if (NULL != returnstring) {
+				g_free(subs);
+				subs = NULL;
+				return returnstring;
+			}
+			event = g_malloc0(sizeof(struct Events));
+			strcpy(event->host, host);
+			strcpy(event->severity, "OK");
+			strcpy(event->category, "subscription");
+			strcpy(event->resolution,"");
+			strcpy(event->message, "New credentials added by the "
+	       		"user");
+			strcpy(event->messageid, "subscription");
+			strcpy(event->originofcondition ,"User Action");
+			action_time = time(NULL);
+			event->time =  action_time;
+			commitevent2db(event, DB_PATH);
+			g_free(event);
+			event = NULL;
+		} else {
+			CRIT("Failed to insert the "
+	     			"subscription in to database");
+			returnstring = malloc(43*sizeof(char));
+			strcpy(returnstring, "Internal error in "
+					"subscribe_event function");
+		}
+	} else {
+		CRIT("Failed to insert the subscription in to "
+     		"the database as the subscription already "
+     		"existed");
+		returnstring = malloc(43*sizeof(char));
+		strcpy(returnstring, "Internal error in "
+			 "subscribe_event function");
+	}
+	g_free (subs);
+	return returnstring;
+}
+
+char *fminder_action(char *subs_type, char * action, char *host, char *username,
 		     char *password, gboolean aggregatormode) {
 	struct Credentials* cred = NULL;
+	struct Subscriptions* subs = NULL;
+	struct Subscription_list *Subs_list = NULL;
 	char* x_auth_token = NULL, *returnstring = NULL;
 	struct Events *event = NULL;
 	time_t action_time;
 	// Lock mutex
 	if(!strncasecmp(action, "add", 3)){
+		// Check if host is already added
 		cred = get_creds(host, DB_PATH);
 		if(!cred){
 		//	g_free(cred);
@@ -645,33 +1029,12 @@ char *fminder_action(char * action, char *host, char *username,
 				INFO("Successfully inserted "
 				     "the credentials in to "
 				     "database");
-				returnstring = subscribe(cred, DESTINATION,
-							LPORT, DB_PATH, aggregatormode);
+				returnstring = subscribe_events (cred, host, subs_type, aggregatormode);
 				if (NULL != returnstring) {
 					g_free(cred);
 					cred = NULL;
 					return returnstring;
 				}
-				event = g_malloc0(sizeof(
-							 struct Events));
-				strcpy(event->host,
-				       host);
-				strcpy(event->severity, "OK");
-				strcpy(event->category,
-				       "subscription");
-				strcpy(event->resolution,"");
-				strcpy(event->message,
-				       "New credentials added by the "
-				       "user");
-				strcpy(event->messageid,
-				       "subscription");
-				strcpy(event->originofcondition
-				       ,"User Action");
-				action_time = time(NULL);
-				event->time =  action_time;
-				commitevent2db(event, DB_PATH);
-				g_free(event);
-				event = NULL;
 			}else{
 				CRIT("Failed to insert the "
 				     "credentials in to database");
@@ -683,12 +1046,13 @@ char *fminder_action(char * action, char *host, char *username,
 				//return returnstring;
 			}
 		}else{
-			CRIT("Failed to insert the credentials in to "
-			     "the database as the server already "
-			     "existed");
-			returnstring = malloc(43*sizeof(char));
-			strcpy(returnstring, "Internal error in "
-						 "fminder_action function");
+			INFO(" Credential already present in DB ");
+			returnstring = subscribe_events (cred, host, subs_type, aggregatormode);
+			if (NULL != returnstring) {
+				g_free(cred);
+				cred = NULL;
+				return returnstring;
+			}
 
 			//free(cred);
 			//cred = NULL;
@@ -699,39 +1063,52 @@ char *fminder_action(char * action, char *host, char *username,
 		return returnstring;
 	}
 	if(!strncasecmp(action, "remove", 6)){
-		returnstring = unsubscribe(host, DB_PATH);
+		returnstring = unsubscribe(host, subs_type, DB_PATH);
 		if(NULL == returnstring){
-			if(delete_creds(host, DB_PATH)){
+
+			if (delete_subscription (host, subs_type,  DB_PATH)) {
 				CRIT("Failed to delete the "
-				     "credentials from Database");
+				     "subscription from Database");
 				returnstring = malloc(43*sizeof(char));
 				strcpy(returnstring, "Internal error in "
-				       "fminder_action function");
+			       		"fminder_action function");
 				return returnstring;
-			}else{
-				INFO("Successfully deleted "
-				     "the credentials from Database");
+			} else {
+				Subs_list = get_subscription_for_host(host , DB_PATH);
+				if (!Subs_list) { 
+					if(delete_creds(host, DB_PATH)){
+						CRIT("Failed to delete the "
+					     	"credentials from Database");
+						returnstring = malloc(43*sizeof(char));
+						strcpy(returnstring, "Internal error in "
+				       			"fminder_action function");
+						return returnstring;
+					}else{
+						INFO("Successfully deleted "
+				     		"the credentials from Database");
+					}	
+				}
+				event = g_malloc0(
+					  	sizeof(struct Events));
+				strcpy(event->host, host);
+				strcpy(event->severity, "Warning");
+				strcpy(event->category,"subscription");
+				strcpy(event->resolution,"");
+				strcpy(event->message,
+			       	"Credentials/subscription deleted by "
+			       	"the user");
+				strcpy(event->messageid,
+			       	"subscription");
+				strcpy(event->originofcondition,
+			       	"User Action");
+				action_time = time(NULL);
+				event->time = action_time;
+				commitevent2db(event, DB_PATH);
+				g_free(event);
+				event = NULL;
 			}
-			event = g_malloc0(
-					  sizeof(struct Events));
-			strcpy(event->host, host);
-			strcpy(event->severity, "Warning");
-			strcpy(event->category,"subscription");
-			strcpy(event->resolution,"");
-			strcpy(event->message,
-			       "Credentials/subscription deleted by "
-			       "the user");
-			strcpy(event->messageid,
-			       "subscription");
-			strcpy(event->originofcondition,
-			       "User Action");
-			action_time = time(NULL);
-			event->time = action_time;
-			commitevent2db(event, DB_PATH);
-			g_free(event);
-			event = NULL;
 		}else{
-			CRIT("Credentials not found "
+			CRIT("Subscriptions not found "
 			     "or Failed to unsubscribe");
 			return returnstring;
 		}
@@ -742,7 +1119,8 @@ char *fminder_action(char * action, char *host, char *username,
 	strcpy(returnstring, "Action not supported");
 	return returnstring;
 }
-gboolean check_subscription_status(struct Credentials* cred, char *destination,
+
+gboolean check_subscription_status(struct Credentials* cred, struct Subscriptions* subs, char *destination,
 				   const char* db_path){
 	struct _u_request request;
 	struct _u_response response;
@@ -754,8 +1132,8 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 	int res = 0;
 	ulfius_init_request(&request);
 	ulfius_init_response(&response);
-	if(!cred->subscription_url || !cred->x_auth_token ||
-	   !strcmp(cred->subscription_url, "") ||
+	if(!subs->subscription_url || !cred->x_auth_token ||
+	   !strcmp(subs->subscription_url, "") ||
 			!strcmp(cred->x_auth_token, "")){
 		CRIT("First No Live Subscriptions for host %s", cred->host);
 		ulfius_clean_request(&request);
@@ -765,7 +1143,7 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 	request.http_verb = o_strdup("GET");
 //	ASPRINTF(&url, "https://%s%s/", cred->host,cred->subscription_url);
 //	CRIT("check_subscription_status : %s \n",url);
-	request.http_url = o_strdup(cred->subscription_url);
+	request.http_url = o_strdup(subs->subscription_url);
 //	free(url); // Looks like url is not needed?
 	request.check_server_certificate = 0;
 	/* Set up header */
@@ -891,6 +1269,8 @@ gboolean check_subscription_status(struct Credentials* cred, char *destination,
 void* subscription_mgr_thread( void *data){
 	struct Credentials_list* Cred_list = NULL, *tmp = NULL;
 	struct Credentials* cred = NULL;
+	struct Subscription_list *Subs_list = NULL, *tmp_subs = NULL;
+	struct Subscriptions* subs = NULL;
 	struct Events *event = NULL;
 	time_t action_time;
 	gint64 end_time;
@@ -919,32 +1299,39 @@ void* subscription_mgr_thread( void *data){
 		Cred_list = get_all_creds(DB_PATH);
 		while(Cred_list){
 			cred = &Cred_list->cred;
-			rv = check_subscription_status(cred,
-					DESTINATION, DB_PATH);
-			if(!rv){
-				if(NULL != subscribe(cred, DESTINATION, LPORT,
-					      DB_PATH, input_action->aggregationmode)){
-					/* Error Handling goes here*/
-					/*update db with an event*/
-					event = g_malloc0(sizeof(
-							struct Events));
-					strcpy(event->host, cred->host);
-					strcpy(event->severity, "Critical");
-					strcpy(event->category,"subscription");
-					strcpy(event->resolution,
-						"Network Access");
-					strcpy(event->message,
-						"Check Network connection");
-					strcpy(event->messageid,
+			Subs_list = get_subscription_for_host(cred->host , DB_PATH);
+			while (Subs_list) {
+				subs = &Subs_list->subscription;
+				rv = check_subscription_status(cred, subs,
+						DESTINATION, DB_PATH);
+				if(!rv){
+					if(NULL != subscribe(cred, subs, DESTINATION, LPORT,
+					      	DB_PATH, input_action->aggregationmode)){
+						/* Error Handling goes here*/
+						/*update db with an event*/
+						event = g_malloc0(sizeof(
+								struct Events));
+						strcpy(event->host, cred->host);
+						strcpy(event->severity, "Critical");
+						strcpy(event->category,"subscription");
+						strcpy(event->resolution,
+							"Network Access");
+						strcpy(event->message,
+							"Check Network connection");
+						strcpy(event->messageid,
 							"subscription");
-					strcpy(event->originofcondition,
-						"Connection to host lost");
-					action_time = time(NULL);
-					event->time = action_time;
-					commitevent2db(event, DB_PATH);
-					g_free(event);
-					event = NULL;
-				}
+						strcpy(event->originofcondition,
+							"Connection to host lost");
+						action_time = time(NULL);
+						event->time = action_time;
+						commitevent2db(event, DB_PATH);
+						g_free(event);
+						event = NULL;
+					}
+				}	
+				tmp_subs=Subs_list;
+				Subs_list=Subs_list->next;
+				free(tmp_subs);
 			}
 			tmp = Cred_list;
 			Cred_list = Cred_list->next;

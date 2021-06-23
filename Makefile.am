@@ -16,6 +16,7 @@ confdir = $(sysconfdir)/fishminder
 certdir = $(sysconfdir)/fishminder/certs
 privdir = $(sysconfdir)/fishminder/certs/private
 elogdir =  $(localstatedir)/log/fishminderd
+mlogdir =  $(localstatedir)/log/telemetry
 dist_conf_DATA = fishminderd.conf sqlite/fishminder.db
 
 fminder_CFLAGS = $(GLIB_CFLAGS) $(GIO_CFLAGS)
@@ -36,6 +37,8 @@ gen-config:
 	echo "DB_PATH = \"$(confdir)/fishminder.db\"" >> $(confdir)/fishminderd.conf
 	echo "DUMP_EVENTS_TO_FILE = \"TRUE\"" >> $(confdir)/fishminderd.conf
 	echo "ILO_LOG_FILE_PATH = \"$(elogdir)/ilo_redfish_event.log\"" >> $(confdir)/fishminderd.conf
+	echo "ENABLE_METRICS_SUBSCRIPTION = \"TRUE\"" >> $(confdir)/fishminderd.conf
+	echo "METRICS_LOG_FILE_PATH = \"$(mlogdir)/telemetry_metric_report.log\"" >> $(confdir)/fishminderd.conf
 
 install-exec-hook:
 	-mkdir -p $(confdir)
@@ -43,6 +46,7 @@ install-exec-hook:
 	-mkdir -p $(privdir)
 	-mkdir -p $(runstatedir)/fishminderd
 	-mkdir -p $(elogdir)
+	-mkdir -p $(mlogdir)
 
 uninstall-hook:
 	-rmdir $(privdir)
@@ -50,3 +54,4 @@ uninstall-hook:
 	-rmdir $(confdir)
 	-rmdir $(runstatedir)/fishminderd
 	-rmdir -p $(elogdir)
+	-rmdir -p $(mlogdir)

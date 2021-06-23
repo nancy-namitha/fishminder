@@ -270,7 +270,7 @@ json_t *get_event_registry(char *input_host,
 	ASPRINTF(&url, "https://%s%s%s/", mycreds->host, REGISTRIES, input_eventid);
 	DBG("Registries Request url: %s", url);
 	//Nancy
-	 fprintf(stderr, "DEBUG: URL \n %s  DONE\n", url);
+	 //fprintf(stderr, "DEBUG: URL \n %s  DONE\n", url);
 	 //Nancy
 
 	request->http_verb = o_strdup("GET");
@@ -291,7 +291,7 @@ json_t *get_event_registry(char *input_host,
 	// Send the request to get the registry
 	res = ulfius_send_http_request(request, response);
 	//Nancy
-	 fprintf(stderr, "DEBUG: Response \n %ld  DONE\n", response->status);
+	 //fprintf(stderr, "DEBUG: Response \n %ld  DONE\n", response->status);
 	 //Nancy
 	if (res != U_OK) {
 		u_map_clean(&map_header);
@@ -1078,17 +1078,17 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	}
 	eventmsg = json_object_get(eventobj, "MessageId");
 	if (eventmsg == NULL) {
-		fprintf(stderr," 1. *******************************");
+		//fprintf(stderr," 1. *******************************");
 		return 1;
 	}
 	timeentry = json_object_get(eventobj, "EventTimestamp");
 	if (timeentry == NULL) {
-		fprintf(stderr," 2. *******************************");
+		//fprintf(stderr," 2. *******************************");
 		return 1;
 	}
 	timechar = strdup(json_string_value(timeentry));
 	if (timechar == NULL) {
-		fprintf(stderr," 3. *******************************");
+		//fprintf(stderr," 3. *******************************");
 		return 1;
 	}
 	if (string2epoch(timechar, timeret) == 0) {
@@ -1114,7 +1114,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	// Add error check!
 	regitem = json_object_get(event_reg, registryentryname);
 	if (regitem == NULL) {
-		fprintf(stderr," 4. *******************************");
+		//fprintf(stderr," 4. *******************************");
 		free(messageidchar);
 		free(timechar);
 		return 1;
@@ -1137,14 +1137,14 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 	if (oem == NULL) {
 		free(messageidchar);
 		free(timechar);
-		fprintf(stderr," 5. *******************************");
+		//fprintf(stderr," 5. *******************************");
 		return 1;
 	}
 	oemhpe = json_object_get(oem, "Hpe");
 	if (oemhpe == NULL) {
 		free(messageidchar);
 		free(timechar);
-		fprintf(stderr," 6. *******************************");
+		//fprintf(stderr," 6. *******************************");
 		return 1;
 	}
 	healthcategory = json_object_get(oemhpe, "HealthCategory");
@@ -1159,7 +1159,7 @@ int preparedbmessage (json_t *eventobj, json_t *event_reg, char *host,
 		if (tmpclearingarray == NULL) {
 			free(messageidchar);
 			free(timechar);
-		fprintf(stderr," 7. *******************************");
+		//fprintf(stderr," 7. *******************************");
 			return 1;
 		}
 		clearmsgs[0] = tmpclearingarray;
@@ -1368,7 +1368,7 @@ char* gethostfromuuid(char* uuid, char* host,char * aggregatorhost){
 
 	// lookup in the db first, to get host using uuid
 	char* err = getuuidhostfromdb(uuid,host,DB_PATH);
-	if(host != NULL){
+	if(strlen(host) <= 0){
 		// not found in the db
 		//Convert the uuid to host
 		fetchhostfrommanagers(uuid,host, aggregatorhost);
@@ -1377,6 +1377,170 @@ char* gethostfromuuid(char* uuid, char* host,char * aggregatorhost){
 	}
 	return host;
 }
+
+/**
+ * aggregator callback function that goes through the event and output it to std output
+ */
+int metrics_callback_post (const struct _u_request *request,
+		struct _u_response *response, void *user_data) {
+
+	json_t *json_body, *metrics, *metricsobj, *reportid, *timeentry, *metricid, *metricproperty, *metricvalue;
+	json_body = metrics = metricsobj = reportid = timeentry = metricid =
+		metricproperty = metricvalue = NULL;
+	int i = 0, ret = 0, sockaddrlen = 0, fail = 0, j = 0;
+	char  hostname[256]="", *tmpchar;
+	char *reportid_str = NULL;
+	FILE *fp;
+
+
+	struct userdata* input_action = (struct userdata*) user_data;
+
+	json_body = ulfius_get_json_body_request(request, NULL);
+
+	char **split = NULL, *target_uuid = NULL;
+	if(!json_is_object(json_body))
+	{
+		CRIT( "error: commit data is not an object\n");
+		json_decref(json_body);
+		return 1;
+	}
+	// Added for debug - Remove
+	
+	   tmpchar = json_dumps(json_body, 8);
+	   //fprintf(stderr, "DEBUG: Full body\n %s \nDONE\n", tmpchar);
+	 
+
+	// Check if this is an Array and process
+	if(json_is_array(json_body)) {
+		CRIT( "Error, the callback function did not expect "
+				"an array here\n");
+		json_decref(json_body);
+		return U_CALLBACK_ERROR;
+	}
+
+	// We need the hostname for the DB
+	if (request->client_address->sa_family == AF_INET) {
+		sockaddrlen = sizeof(struct sockaddr);
+	} else if (request->client_address->sa_family == AF_INET6) {
+		sockaddrlen = sizeof(struct sockaddr_in);
+	} else {
+		// We only support IPv4 and IPv6
+		CRIT( "Error, the callback function did not "
+				"expect this address family\n");
+		json_decref(json_body);
+		return U_CALLBACK_ERROR;
+	}
+	ret = getnameinfo(request->client_address, sockaddrlen,
+			hostname, 256, NULL, 0, 0);
+	if (0 != ret) {
+		CRIT( "getnameinfo couldn't get a hostname \n");
+		CRIT( "will go with ip address instead\n");
+	}
+	// Need to get the message(s) out of the json_body and commit them to
+	// the DB
+	//
+	reportid = json_object_get(json_body, "Id");
+	if (reportid == NULL ) {
+		json_decref(json_body);
+		return 1;
+	}
+	reportid_str = strdup(json_string_value(reportid));
+	metrics = json_object_get(json_body, "MetricValues");
+	if (metrics == NULL) {
+		json_decref(json_body);
+		free(reportid_str);
+		return 1;
+	}
+	i = json_array_size(metrics);
+	// Go through the events array
+	// Lock the mutex first
+	g_mutex_lock(input_action->ulfius_lock);
+
+	fp = fopen(METRICS_LOG_FILE_PATH, "a+");
+	if(fp == NULL) {
+                // if error opening the file show error message and exit the program
+                CRIT("Error opening a file %s \n", METRICS_LOG_FILE_PATH);
+		json_decref(json_body);
+		free(reportid_str);
+                return(1);
+        }
+
+
+	for (i=0; i < json_array_size(metrics); i++) {
+		// Need to add some checking here
+		metricsobj = json_array_get(metrics, i);
+		if(!json_is_object(metricsobj)){
+                    continue;
+                }
+		metricid = json_object_get(metricsobj, "MetricId");
+		if (metricid == NULL) {
+			continue;
+		}
+		metricvalue = json_object_get(metricsobj, "MetricValue");
+		timeentry = json_object_get(metricsobj, "Timestamp");
+
+		metricproperty = json_object_get(metricsobj, "MetricProperty");
+		if (metricproperty  == NULL) {
+			continue; 
+		}
+		
+		// Get the Host ip from UUID if aggragation mode is true.
+		char *target_uuid = NULL;
+		char *unit_details = NULL;
+
+		char* metricproperty_string = (char*)json_string_value(metricproperty);
+		if (metricproperty_string != "") {
+			split = g_strsplit(metricproperty_string, "/", -1);
+			target_uuid = split[4];
+			char *ret = strchr(split[4], '#');
+			if ( ret != NULL) {
+				char **sysidsplit = NULL;
+				sysidsplit =  g_strsplit(split[4], "#", -1);
+				target_uuid = sysidsplit[0];
+			}
+			int len = g_strv_length (split);
+			unit_details = split[len -1 ];
+
+		}
+
+		char host[256]= {0}, units[50] = {0};
+		gethostfromuuid(target_uuid, host,hostname);
+		DBG("gethostfromuuid : %s", host);
+
+		if ( !g_strcmp0 (unit_details, "PlatformConsumedWatts") ) {
+			strcpy(units, "Watts");
+		} else if  ( !g_strcmp0 (unit_details,"CPUUtil")) {
+			strcpy(units, "Percentage");
+		} else if  ( !g_strcmp0 (unit_details,"ReadingCelsius")) {
+			strcpy(units, "Deg Celsius");
+		} else if ( !g_strcmp0 (unit_details, "PowerConsumedWatts")) {
+			strcpy(units, "Watts");
+		}
+		g_strfreev(split);
+                split = NULL;
+
+
+		fprintf(fp, "%s|%s|%s|%s|%s|%s|%s\n",
+				(char*) json_string_value(timeentry), reportid_str,
+				host, "xxxx.host.com", (char*) json_string_value(metricid), (char*) json_string_value(metricvalue),
+				units);
+				
+	}
+
+	ulfius_set_string_body_response(response, 200, "Created");
+	free(reportid_str);
+	json_decref(metricsobj);
+	json_decref(json_body);
+	if (fp != NULL)
+		fclose(fp);
+	// The below can probably be moved up to speed up things
+	g_mutex_unlock(input_action->ulfius_lock);
+	if (fail == 1)
+		return U_CALLBACK_ERROR;
+	else
+		return U_CALLBACK_CONTINUE;
+}
+
 
 /**
  * aggregator callback function that goes through the event and output it to std output
@@ -1405,9 +1569,10 @@ int aggregator_callback_post (const struct _u_request *request,
 	}
 	// Added for debug - Remove
 	
+	/*---------
 	   tmpchar = json_dumps(json_body, 8);
 	   fprintf(stderr, "DEBUG: Full body\n %s \nDONE\n", tmpchar);
-	 
+	 -----*/
 
 	// Check if this is an Array and process
 	if(json_is_array(json_body)) {
@@ -1461,7 +1626,7 @@ int aggregator_callback_post (const struct _u_request *request,
 		event_reg_body = get_event_registry(hostname, tmpchar, DB_PATH,
 				&reg_request, &reg_response);
 		//Nancy
-	   	fprintf(stderr, "DEBUG: Full Host\n %s  -- MessageIDi - %s \n DONE\n", hostname, messageidchar);
+	   	//fprintf(stderr, "DEBUG: Full Host\n %s  -- MessageIDi - %s \n DONE\n", hostname, messageidchar);
 		//Nancy
 		// // Added for debug - Remove
 
@@ -1518,6 +1683,7 @@ int aggregator_callback_post (const struct _u_request *request,
 			strcpy(event.originofcondition,json_string_value(originofcondition));
 			split = g_strsplit(originofcondition_string, "/", -1);
 			target_uuid = split[4];
+
 		}
 
 		char host[256]= {0};
@@ -1810,6 +1976,9 @@ void *listener(void *input) {
 				   "/AggregatorEvents/Destination",
 				   NULL, 0, &aggregator_callback_post, input);
 
+	ulfius_add_endpoint_by_val(&instance, "POST", 
+			           "/MetricsReport/Destination",
+				   NULL, 0, &metrics_callback_post, input);
 	// Start the framework
 	char * key_pem = read_file(input_action->key_path);
 	char *cert_pem = read_file(input_action->cert_path);

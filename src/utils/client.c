@@ -41,6 +41,7 @@ struct user_data {
 };
 */
 struct user_data {
+	gchar* subscription_type;
 	gchar* action;
 	gchar* host;
 	gchar* username;
@@ -49,6 +50,8 @@ struct user_data {
 struct user_data user_action = {0};
 
 static GOptionEntry entries[] = {
+  { "type", 't', 0, G_OPTION_ARG_STRING, &user_action.subscription_type,
+	  "Add or remove credentials", NULL },
   { "action", 'a', 0, G_OPTION_ARG_STRING, &user_action.action,
 	  "Add or remove credentials", NULL },
   { "host", 'h', 0, G_OPTION_ARG_STRING, &user_action.host,
@@ -86,12 +89,12 @@ main (int argc, char *argv[])
 		g_print ("option parsing failed: %s\n", error->message);
 		return 1 ;
 	}
-	if(user_action.action && user_action.host &&
+	if(user_action.subscription_type && user_action.action && user_action.host &&
 			user_action.username && user_action.password){
-		g_print("%s %s %s %s",user_action.action, user_action.host,
+		g_print("%s %s %s %s %s",user_action.subscription_type, user_action.action, user_action.host,
 				user_action.username, user_action.password);
-		fmt = "%s %s %s %s";
-		size = build_message_to_send(&buffer, fmt ,user_action.action,
+		fmt = "%s %s %s %s %s";
+		size = build_message_to_send(&buffer, fmt ,user_action.subscription_type, user_action.action,
 				user_action.host, user_action.username,
 				user_action.password);
 		g_print("%s", buffer);

@@ -27,12 +27,16 @@
 #ifndef _SUBSCRIPTIONMGR_H_
 #define _SUBSCRIPTIONMGR_H_
 
+struct Subscriptions *get_subscription(char *input_host, char *subs_type, const char* db_path);
+int insert_subscription(struct Subscriptions* input_subs, const char* db_path);
+int delete_subscription (char *hostname, char  *subs_type, const char* db_path);
+char *subscribe_events (  struct Credentials* cred, char *host,char *subs_type, gboolean aggregatormode);
 char* get_event_service_subscription_uri(struct Credentials *cred);
 gboolean is_this_my_subscription(struct Credentials* cred, char *sub_url, char* destination);
-char *subscribe(struct Credentials* cred, char* destination, int port,
+char *subscribe(struct Credentials* cred,  struct Subscriptions* , char* destination, int port,
 		const char* db_path, gboolean aggregatormode);
-char *unsubscribe(char* host, const char* db_path);
-gboolean check_subscription_status(struct Credentials* cred, char* destination,
+char *unsubscribe(char* host, char *subs_type, const char* db_path);
+gboolean check_subscription_status(struct Credentials* cred, struct Subscriptions* subs, char* destination,
 		const char* db_path);
 /* Pass global data to this thread as input arguments*/
 void* subscription_mgr_thread(void* data);
@@ -65,6 +69,7 @@ void* subscription_mgr_thread(void* data);
         \"Alert\" ], \
     \"HttpHeaders\": {\"Content-Type\": \"application/json\"}, \
     \"Context\": \"Public\", \
+    \"EventFormatType\": \"Event\", \
     \"Oem\": { \
         \"Hpe\": { \
             \"DeliveryRetryIntervalInSeconds\": 30, \
@@ -82,6 +87,7 @@ void* subscription_mgr_thread(void* data);
     \"HttpHeaders\": {\"Content-Type\": \"application/json\"}, \
     \"Context\": \"Public\", \
     \"Protocol\": \"Redfish\", \
+    \"EventFormatType\": \"Event\", \
     \"SubordinateResources\": true, \
 	  \"OriginResources\": [], \
     \"Oem\": { \
@@ -92,6 +98,16 @@ void* subscription_mgr_thread(void* data);
             \"RetireOldEventInMinutes\": 10 \
         } \
     } \
+}"
+
+#define REDFISH_METRICS_SUBSCRIPTION_POST \
+        "{\"Destination\": \"https://%s:%d/MetricsReport/Destination\",\
+    \"EventTypes\": [ \
+        \"MetricReport\" ], \
+    \"HttpHeaders\": {\"Content-Type\": \"application/json\"}, \
+    \"Context\": \"TelemetryDemo\", \
+    \"Protocol\": \"Redfish\", \
+    \"EventFormatType\": \"MetricReport\" \
 }"
 
 #endif

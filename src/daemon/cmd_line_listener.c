@@ -198,7 +198,7 @@ incoming_callback  (GSocketService *service,
                     gpointer user_data)
 {
 	//char action[16], host[256], username[256], password[256];
-	char action[16]={'\0'}, host[256]={'\0'}, username[256]={'\0'},
+	char subs_type[256]={'\0'}, action[16]={'\0'}, host[256]={'\0'}, username[256]={'\0'},
 	     password[256]={'\0'};
 	char *action_ret = NULL;
 	GError *error = NULL;
@@ -215,12 +215,12 @@ incoming_callback  (GSocketService *service,
 			NULL,
 			NULL);
 	message[size] = '\0';
-	sscanf(message, "%s %s %s %s", action, host, username, password);
+	sscanf(message, "%s %s %s %s %s ", subs_type, action, host, username, password);
 	memset(message, '\0' ,size);
-	DBG(" %s \n %s \n %s \n %s", action, host, username, password);
+	DBG(" %s \n %s \n %s \n %s \n %s", subs_type, action, host, username, password);
 	//	DBG("Message was: \"%s\"\n", message);
 	g_mutex_lock(data.ulfius_lock);
-	action_ret = fminder_action(action, host, username, password, data.aggregationmode);
+	action_ret = fminder_action(subs_type, action, host, username, password, data.aggregationmode);
 	g_mutex_unlock(data.ulfius_lock);
 	if (action_ret != NULL) {
 		// We have a problem need to send back the action_ret char
@@ -283,7 +283,7 @@ main (int argc, char **argv)
 {
 	config_t cfg;
 	const char* pidfile = NULL, *db_path = NULL, *key_path = NULL;
-	const char* ilo_log_path = NULL, *write_to_file = NULL;
+	const char* ilo_log_path = NULL, *write_to_file = NULL, *telemetry_log_path = NULL, *enable_telemetry = NULL;
 	const char *cert_path = NULL;
         const char* user = NULL;
 	GThread* subscription_thread_id = NULL;
@@ -374,6 +374,21 @@ main (int argc, char **argv)
 		IS_EVENT_WRITE_FILE = true;
 	} else 
 		IS_EVENT_WRITE_FILE = false;
+
+	if(!config_lookup_string(&cfg, "METRICS_LOG_FILE_PATH", &telemetry_log_path)){
+                CRIT("METRICS_LOG_FILE_PATH not found in configuration file.");
+                return 1;
+        }
+        strcpy(METRICS_LOG_FILE_PATH, telemetry_log_path);
+
+	if(!config_lookup_string(&cfg, "ENABLE_METRICS_SUBSCRIPTION", &enable_telemetry)){
+		CRIT("ENABLE_METRICS_SUBSCRIPTION not found in configuration file.");
+		return 1;
+	}
+	if (strcmp(enable_telemetry, "TRUE") == 0) {
+		ENABLE_METRICS_SUBSCRIPTION = true;
+	} else 
+		ENABLE_METRICS_SUBSCRIPTION = false;
 
 	if(!check_pidfile(pidfile)){
 		CRIT("PID file check failed. Exiting.");
